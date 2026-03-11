@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -160,6 +160,7 @@ TEST_F(MdocZKTest, one_claim) {
       {"EUAV_Age_Over_18-mdoc[22]", {test::age_over_18}, &mdoc_tests[22]},
       {"EUAV_Age_Over_18-mdoc[23]", {test::age_over_18}, &mdoc_tests[23]},
       {"EUAV_Age_Over_18-mdoc[24]", {test::age_over_18}, &mdoc_tests[24]},
+      {"Aadhaar_age_above18-mdoc[25]", {test::age_above18}, &mdoc_tests[25]},
   };
 
   for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {

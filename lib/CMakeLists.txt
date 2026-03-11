@@ -50,6 +50,7 @@ endif()
 
 include_directories(${proofs_SOURCE_DIR})
 
+# main system used in production
 add_subdirectory(testing)
 add_subdirectory(util)
 add_subdirectory(algebra)
@@ -63,14 +64,21 @@ add_subdirectory(gf2k)
 add_subdirectory(cbor)
 add_subdirectory(ec)
 add_subdirectory(zk)
-add_subdirectory(circuits/anoncred)
-add_subdirectory(circuits/base64)
 add_subdirectory(circuits/cbor_parser)
 add_subdirectory(circuits/compiler)
 add_subdirectory(circuits/ecdsa)
-add_subdirectory(circuits/jwt)
 add_subdirectory(circuits/logic)
 add_subdirectory(circuits/mac)
 add_subdirectory(circuits/mdoc)
 add_subdirectory(circuits/sha)
-add_subdirectory(circuits/sha3)
+
+# experiments and tests, not used in production, may be buggy
+add_subdirectory(circuits/tests/anoncred)
+add_subdirectory(circuits/tests/sha3)
+add_subdirectory(circuits/tests/base64)
+add_subdirectory(circuits/tests/jwt)
+add_subdirectory(circuits/tests/ripemd)
+
+# experimental mdoc stuff, not used in production
+add_subdirectory(circuits/tests/mdoc)
+

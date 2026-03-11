@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #include "algebra/bogorng.h"
 #include "algebra/fp_p128.h"
 #include "algebra/fp_p256.h"
+#include "algebra/fp_p256k1.h"
 #include "algebra/fp_p384.h"
 #include "algebra/fp_p521.h"
 #include "algebra/nat.h"
@@ -317,6 +318,7 @@ TEST(Fp, AllSizes) {
       Fp<6>("394020061963944792122790401001436138050797392704654466679482934042"
             "45721771497210611414266254884915640806627990306499"));
   onefield(Fp256<>());
+  onefield(Fp256k1<>());
   onefield(Fp128<>());
   onefield(Fp384<>());
   onefield(Fp521<>());
@@ -420,6 +422,12 @@ void BM_p256_add(benchmark::State& state) {
 }
 BENCHMARK(BM_p256_add);
 
+void BM_p256k1_add(benchmark::State& state) {
+  const Fp256k1<true> F;
+  bench_add(F, state);
+}
+BENCHMARK(BM_p256k1_add);
+
 void BM_p384_add(benchmark::State& state) {
   const Fp384<true> F;
   bench_add(F, state);
@@ -443,6 +451,12 @@ void BM_p256_mul(benchmark::State& state) {
   bench_mul(F, state);
 }
 BENCHMARK(BM_p256_mul);
+
+void BM_p256k1_mul(benchmark::State& state) {
+  const Fp256k1<true> F;
+  bench_mul(F, state);
+}
+BENCHMARK(BM_p256k1_mul);
 
 void BM_p384_mul(benchmark::State& state) {
   const Fp384<true> F;

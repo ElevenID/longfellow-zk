@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -63,6 +63,15 @@ static const RequestedAttribute familyname_mustermann = {
     .namespace_len = 17,
     .id_len = 11,
     .cbor_value_len = 11};
+
+static const RequestedAttribute age_above18 = {
+    .namespace_id = {'i', 'n', '.', 'g', 'o', 'v', '.', 'u', 'i', 'd', 'a',
+                     'i', '.', 'a', 'a', 'd', 'h', 'a', 'a', 'r', '.', '1'},
+    .id = {'a', 'g', 'e', '_', 'a', 'b', 'o', 'v', 'e', '1', '8'},
+    .cbor_value = {0x63, 'Y', 'e', 's'},
+    .namespace_len = 22,
+    .id_len = 11,
+    .cbor_value_len = 4};
 
 static const RequestedAttribute birthdate_1971_09_01 = {
     .namespace_id = {'o', 'r', 'g', '.', 'i', 's', 'o', '.', '1', '8', '0', '1',

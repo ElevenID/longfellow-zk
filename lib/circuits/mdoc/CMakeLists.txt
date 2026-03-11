@@ -31,9 +31,6 @@ target_link_libraries(mdoc_signature_test mdoc)
 #proofs_add_test(zk_spec_test)
 #target_link_libraries(zk_spec_test mdoc)
 
-proofs_add_test(mdoc_1f_test)
-target_link_libraries(mdoc_1f_test mdoc)
-
 # link mdoc_zk_test explicitly against the static library
 # so that we know that the static library works
 add_executable(mdoc_zk_test mdoc_zk_test.cc)

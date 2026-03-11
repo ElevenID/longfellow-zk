@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 
 #include "algebra/fp.h"
 #include "ec/p256.h"
+#include "ec/p256k1.h"
 #include "benchmark/benchmark.h"
 #include "gtest/gtest.h"
 
@@ -38,13 +39,8 @@ const Field f_53951(
     "0xFFFFFFFF00000001000000000000000000000000FFFF"
     "FFFFFFFFFFFFFFFFFFFF");
 
-const Field secp_base(
-    "1157920892373161954235709850086879078532699846"
-    "65640564039457584007908834671663");
-
 typedef EllipticCurve<Field, 4, 256> EC32543;
 typedef EllipticCurve<Field, 4, 256> EC53951;
-typedef EllipticCurve<Field, 4, 256> SECP256K1;
 
 // The following curve from https://arxiv.org/pdf/2208.01635.pdf has prime
 // order =
@@ -71,14 +67,6 @@ const EC53951 ec_53951(
         "0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"),
     f_53951);
 
-const SECP256K1 secp256k1(
-    secp_base.of_string("0"), secp_base.of_string("7"),
-    secp_base.of_string("550662630222773436695787188951685343262506034537775941"
-                        "75500187360389116729240"),
-    secp_base.of_string("326705100207588169780830851305070431844712733806592432"
-                        "75938904335757337482424"),
-    secp_base);
-
 TEST(EllipticCurve, isOnCurve) {
   EXPECT_TRUE(ec_32543.is_on_curve(ec_32543.generator()));
   EXPECT_TRUE(ec_32543.is_on_curve(ec_32543.zero()));
@@ -86,8 +74,8 @@ TEST(EllipticCurve, isOnCurve) {
   EXPECT_TRUE(ec_53951.is_on_curve(ec_53951.generator()));
   EXPECT_TRUE(ec_53951.is_on_curve(ec_53951.zero()));
 
-  EXPECT_TRUE(secp256k1.is_on_curve(secp256k1.generator()));
-  EXPECT_TRUE(secp256k1.is_on_curve(secp256k1.zero()));
+  EXPECT_TRUE(p256k1.is_on_curve(p256k1.generator()));
+  EXPECT_TRUE(p256k1.is_on_curve(p256k1.zero()));
 
   // This point is on the curve, but not normalized, and thus our method
   // should return false.
@@ -145,62 +133,72 @@ TEST(EllipticCurve, addEZeroA) {
   // 24893872525273665559647505993700238432595500474576223152737037560633815418477
   // 1)
 
-  auto p1 = secp256k1.point(
-      secp_base.of_string("7248897022838050928742271522657553569889315727306307"
-                          "4627791787432852706183111"),
-      secp_base.of_string("6207062289869844383188353540343625871277088829439702"
-                          "6493185421712108624767191"));
-  auto p2 = secp256k1.point(
-      secp_base.of_string("5287996608617616210824035416237829294742551766909549"
-                          "8736796738054975791823498"),
-      secp_base.of_string("3069939076229060075478121206988387027093881409913395"
-                          "7400920709995153465021145"));
-  auto want = secp256k1.point(
-      secp_base.of_string("1000327830500581504997853490388457427944018957783892"
-                          "96862674788824339876696454"),
-      secp_base.of_string("2489387252527366555964750599370023843259550047457622"
-                          "3152737037560633815418477"));
+  auto p1 =
+      p256k1.point(p256k1_base.of_string(
+                       "7248897022838050928742271522657553569889315727306307"
+                       "4627791787432852706183111"),
+                   p256k1_base.of_string(
+                       "6207062289869844383188353540343625871277088829439702"
+                       "6493185421712108624767191"));
+  auto p2 =
+      p256k1.point(p256k1_base.of_string(
+                       "5287996608617616210824035416237829294742551766909549"
+                       "8736796738054975791823498"),
+                   p256k1_base.of_string(
+                       "3069939076229060075478121206988387027093881409913395"
+                       "7400920709995153465021145"));
+  auto want =
+      p256k1.point(p256k1_base.of_string(
+                       "1000327830500581504997853490388457427944018957783892"
+                       "96862674788824339876696454"),
+                   p256k1_base.of_string(
+                       "2489387252527366555964750599370023843259550047457622"
+                       "3152737037560633815418477"));
 
-  auto got = secp256k1.addEf(p1, p2);
-  EXPECT_TRUE(secp256k1.equal(want, got));
+  auto got = p256k1.addEf(p1, p2);
+  EXPECT_TRUE(p256k1.equal(want, got));
 
   // may as well test commutativity:
-  got = secp256k1.addEf(p2, p1);
-  EXPECT_TRUE(secp256k1.equal(want, got));
+  got = p256k1.addEf(p2, p1);
+  EXPECT_TRUE(p256k1.equal(want, got));
 
   // test with infinity point.
-  auto z = secp256k1.zero();
-  got = secp256k1.addEf(z, p1);
-  EXPECT_TRUE(secp256k1.equal(p1, got));
-  got = secp256k1.addEf(p1, z);
-  EXPECT_TRUE(secp256k1.equal(p1, got));
+  auto z = p256k1.zero();
+  got = p256k1.addEf(z, p1);
+  EXPECT_TRUE(p256k1.equal(p1, got));
+  got = p256k1.addEf(p1, z);
+  EXPECT_TRUE(p256k1.equal(p1, got));
 
   // test overwrite value
-  secp256k1.addE(p1, p2);
-  EXPECT_TRUE(secp256k1.equal(want, p1));
+  p256k1.addE(p1, p2);
+  EXPECT_TRUE(p256k1.equal(want, p1));
 }
 
 // Test with secp256k1 where a = 0, b = 7.
 TEST(EllipticCurve, doubleEZeroA) {
-  auto p1 = secp256k1.point(
-      secp_base.of_string("1073035822907330979248421939724650220531482117751943"
-                          "73671539518313500194639752"),
-      secp_base.of_string("1037959661087827174468066840237421684623654492726397"
-                          "90795591544606836007446638"));
+  auto p1 =
+      p256k1.point(p256k1_base.of_string(
+                       "1073035822907330979248421939724650220531482117751943"
+                       "73671539518313500194639752"),
+                   p256k1_base.of_string(
+                       "1037959661087827174468066840237421684623654492726397"
+                       "90795591544606836007446638"));
 
-  auto want = secp256k1.point(
-      secp_base.of_string("9288356354773395374719339924146797529520150860835279"
-                          "8513009429659680796014075"),
-      secp_base.of_string("1146109652104331348038103431792376352806630981117018"
-                          "48326472592228175073260197"));
+  auto want =
+      p256k1.point(p256k1_base.of_string(
+                       "9288356354773395374719339924146797529520150860835279"
+                       "8513009429659680796014075"),
+                   p256k1_base.of_string(
+                       "1146109652104331348038103431792376352806630981117018"
+                       "48326472592228175073260197"));
 
-  auto got = secp256k1.doubleEf(p1);
-  EXPECT_TRUE(secp256k1.equal(want, got));
+  auto got = p256k1.doubleEf(p1);
+  EXPECT_TRUE(p256k1.equal(want, got));
 
   // // test with infinity point.
-  auto z = secp256k1.zero();
-  got = secp256k1.doubleEf(z);
-  EXPECT_TRUE(secp256k1.equal(got, z));
+  auto z = p256k1.zero();
+  got = p256k1.doubleEf(z);
+  EXPECT_TRUE(p256k1.equal(got, z));
 }
 
 // Test with secp256r1 curve where a = -3.
@@ -392,6 +390,42 @@ TEST(EllipticCurve, P256MultiExponentiation) {
     auto want = p[0];
     auto got = p256.scalar_multf(1, &p[0], &s[0]);
     EXPECT_TRUE(p256.equal(want, got));
+  }
+}
+
+TEST(EllipticCurve, P256k1MultiExponentiation) {
+  auto g = p256k1.generator();
+
+  std::mt19937 rng;
+  std::uniform_int_distribution<uint64_t> dist;
+
+  constexpr size_t n = 100;
+  std::vector<P256k1::ECPoint> p(n);
+  std::vector<P256k1::N> s(n);
+  {
+    // Test default case.
+    auto got = p256k1.scalar_multf(0, &p[0], &s[0]);
+    EXPECT_TRUE(p256k1.equal(p256k1.zero(), got));
+  }
+
+  {
+    auto want = p256k1.zero();
+    for (size_t i = 0; i < n; ++i) {
+      if (i == 0) {
+        p[i] = g;
+      } else {
+        p[i] = p256k1.doubleEf(p[i - 1]);
+      }
+      std::array<uint64_t, 4> init;
+      for (size_t j = 0; j < 4; ++j) {
+        init[j] = dist(rng);
+      }
+      s[i] = P256k1::N(init);
+      want = p256k1.addEf(want, p256k1.scalar_multf(p[i], s[i]));
+    }
+
+    auto got = p256k1.scalar_multf(n, &p[0], &s[0]);
+    EXPECT_TRUE(p256k1.equal(want, got));
   }
 }
 
