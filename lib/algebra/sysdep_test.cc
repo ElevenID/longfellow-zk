@@ -37,5 +37,13 @@ TEST(Sysdep, mulhl32) {
   EXPECT_EQ(l, 1 + (1ull << 27) + (1ull << 29));
   EXPECT_EQ(h, 1ull << (27 + 29 - 32));
 }
+TEST(Sysdep, cmovnz) {
+  uint64_t a[1] = {1};
+  uint64_t b[1] = {2};
+  cmovnz(1, a, 0, b);
+  EXPECT_EQ(a[0], 1);
+  cmovnz(1, a, 1, b);
+  EXPECT_EQ(a[0], 2);
+}
 }  // namespace
 }  // namespace proofs
