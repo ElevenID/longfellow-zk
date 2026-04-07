@@ -167,6 +167,18 @@ struct tests {
     EXPECT_FALSE(x.has_value());
     auto sx = F.of_bytes_subfield(bad_bytes.data());
     EXPECT_FALSE(sx.has_value());
+
+    // First half valid (0), second half invalid (0xff)
+    std::array<uint8_t, Field::kBytes> partial_bad_bytes;
+    partial_bad_bytes.fill(0);
+    for (size_t i = Field::kSubFieldBytes; i < Field::kBytes; ++i) {
+      partial_bad_bytes[i] = 0xff;
+    }
+    auto y = F.of_bytes_field(partial_bad_bytes.data());
+    EXPECT_FALSE(y.has_value());
+
+    auto string_elt = F.of_string("123");
+    EXPECT_EQ(string_elt, F.of_scalar(123));
   }
 
   static void poly_evaluation_points(const Field& F) {

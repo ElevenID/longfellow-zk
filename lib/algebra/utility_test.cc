@@ -14,10 +14,10 @@
 
 #include "algebra/utility.h"
 
-#include <stddef.h>
-
 #include "algebra/bogorng.h"
+#include "algebra/compare.h"
 #include "algebra/fp.h"
+#include "algebra/hash.h"
 #include "gtest/gtest.h"
 
 namespace proofs {
@@ -80,6 +80,22 @@ TEST(Utility, Factorial) {
     Elt fact = AlgebraUtil<Field>::factorial(i, F);
     EXPECT_EQ(B[i], F.mulf(A[i], fact));
   }
+}
+
+TEST(Utility, CompareAndHash) {
+  const Field F(
+      "218882428718392752222464057452572750885483644004160343436982041865758084"
+      "95617");
+  auto a = F.of_scalar(1);
+  auto b = F.of_scalar(2);
+
+  EXPECT_TRUE(elt_less_than(a, b, F));
+  EXPECT_FALSE(elt_less_than(b, a, F));
+  EXPECT_FALSE(elt_less_than(a, a, F));
+
+  auto h1 = elt_hash(a, F);
+  auto h2 = elt_hash(b, F);
+  EXPECT_NE(h1, h2);
 }
 
 }  // namespace

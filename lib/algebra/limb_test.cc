@@ -71,5 +71,14 @@ TEST(Limb, Array) {
   EXPECT_EQ(bytes[31], 0u);
 }
 
+TEST(Limb, Bit) {
+  constexpr size_t W = 4;
+  std::array<uint64_t, W> k = {1, 0, 0, 0};
+  Limb<W> kk(k);
+  EXPECT_EQ(kk.bit(0), 1);
+  EXPECT_EQ(kk.bit(1), 0);
+  EXPECT_EQ(kk.bit(256), 0);
+}
+
 }  // namespace
 }  // namespace proofs

@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <optional>
 #include <string>
 
 #include "gtest/gtest.h"
@@ -97,6 +98,38 @@ TEST(Nat, Parsing) {
   }
 }
 
+TEST(Nat, OfBytesMasking) {
+  uint8_t buf[32] = {
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  };
+
+  Nat<4> a0 = Nat<4>::of_bytes(buf, 0);
+  std::array<uint64_t, 4> expected_0 = {0, 0, 0, 0};
+  EXPECT_EQ(a0, Nat<4>(expected_0));
+
+  Nat<4> a10 = Nat<4>::of_bytes(buf, 10);
+  std::array<uint64_t, 4> expected_10 = {0x3ff, 0, 0, 0};
+  EXPECT_EQ(a10, Nat<4>(expected_10));
+
+  Nat<4> a64 = Nat<4>::of_bytes(buf, 64);
+  std::array<uint64_t, 4> expected_64 = {~0ull, 0, 0, 0};
+  EXPECT_EQ(a64, Nat<4>(expected_64));
+
+  Nat<4> a65 = Nat<4>::of_bytes(buf, 65);
+  std::array<uint64_t, 4> expected_65 = {~0ull, 1ull, 0, 0};
+  EXPECT_EQ(a65, Nat<4>(expected_65));
+
+  Nat<4> a256 = Nat<4>::of_bytes(buf, 256);
+  std::array<uint64_t, 4> expected_256 = {~0ull, ~0ull, ~0ull, ~0ull};
+  EXPECT_EQ(a256, Nat<4>(expected_256));
+
+  Nat<4> a250 = Nat<4>::of_bytes(buf, 250);
+  std::array<uint64_t, 4> expected_250 = {~0ull, ~0ull, ~0ull, (~0ull) >> 6};
+  EXPECT_EQ(a250, Nat<4>(expected_250));
+}
+
 TEST(Nat, BadStrings) {
   const char* bad_strings[] = {
       "123456789abcdef",
@@ -111,11 +144,20 @@ TEST(Nat, BadStrings) {
       "559743559744",
       "0x40000000000000000001230000000000000000000000000000000000000000000",
       "000000000000000000000000000000000000000000000000000000000000000000000000"
+      "000000000000",
+      "000000000000000000000000000000000000000000000000000000000000000000000000"
+      "000000000000000000000000000000000000000000000000000000000000000000000000"
+      "000000000000000000000000000000000000000000000000000000000000000000000000"
+      "000000000000000000000000000000000000000000000000000000000000000000000000"
       "000000000000"};
 
   for (auto s : bad_strings) {
     EXPECT_FALSE(Nat<4>::of_untrusted_string(s).has_value());
   }
+}
+TEST(Nat, OfUntrustedStringValid) {
+  EXPECT_TRUE(Nat<4>::of_untrusted_string("123").has_value());
+  EXPECT_TRUE(Nat<4>::of_untrusted_string("0x123").has_value());
 }
 
 TEST(Nat, BadDigits) {
@@ -125,6 +167,20 @@ TEST(Nat, BadDigits) {
       EXPECT_DEATH(digit((char)i), "bad char");
     }
   }
+}
+
+TEST(Nat, HexConstructor) {
+  Nat<4> a("0x123");
+  EXPECT_EQ(a, Nat<4>(0x123));
+}
+
+TEST(Nat, SafeDigit) {
+  EXPECT_EQ(Nat<4>::safe_digit('a', 16), 10);
+  EXPECT_EQ(Nat<4>::safe_digit('f', 16), 15);
+  EXPECT_EQ(Nat<4>::safe_digit('A', 16), 10);
+  EXPECT_EQ(Nat<4>::safe_digit('F', 16), 15);
+  EXPECT_EQ(Nat<4>::safe_digit('g', 16), std::nullopt);
+  EXPECT_EQ(Nat<4>::safe_digit('a', 10), std::nullopt);
 }
 
 TEST(Nat, Mac) {
