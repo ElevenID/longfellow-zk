@@ -73,6 +73,8 @@ add_subdirectory(circuits/mdoc)
 add_subdirectory(circuits/sha)
 
 # experiments and tests, not used in production, may be buggy
+option(LONGFELLOW_BUILD_EXPERIMENTAL "Build experimental test circuits" OFF)
+if(LONGFELLOW_BUILD_EXPERIMENTAL)
 add_subdirectory(circuits/tests/anoncred)
 add_subdirectory(circuits/tests/sha3)
 add_subdirectory(circuits/tests/base64)
@@ -81,4 +83,5 @@ add_subdirectory(circuits/tests/ripemd)
 
 # experimental mdoc stuff, not used in production
 add_subdirectory(circuits/tests/mdoc)
+endif()
 

@@ -30,13 +30,11 @@
 #include "gf2k/gf2_128.h"
 #include "gtest/gtest.h"
 
-// Make sure we can parse all the mdoc examples
+// Make sure we can parse all the mdoc examples.
 //
-// TODO [matteof 2025-08-25] This file includes circuits/mdoc/
-// which includes the cbor parser, creating a circular dependency.
-// Punt for now, but mdoc examples should be in a separate
-// directory included by everybody else.
-//
+// Kept in circuits/tests/mdoc rather than cbor_parser_v2 so the example-driven
+// mdoc tests live in a neutral directory and do not create a cbor_parser_v2 ↔
+// mdoc test-layer dependency.
 namespace proofs {
 namespace {
 template <class Field>

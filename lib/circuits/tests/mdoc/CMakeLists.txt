@@ -15,5 +15,8 @@
 proofs_add_test(mdoc_1f_test)
 target_link_libraries(mdoc_1f_test mdoc)
 
+proofs_add_test(mdoc_examples_test)
+target_link_libraries(mdoc_examples_test mdoc)
+
 proofs_add_test(mdoc_revocation_test)
 target_link_libraries(mdoc_revocation_test mdoc)

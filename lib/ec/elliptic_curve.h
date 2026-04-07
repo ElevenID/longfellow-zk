@@ -140,8 +140,9 @@ class EllipticCurve {
   }
 
   // Computes the elliptic curve point p * scalar.
-  // This method is not constant time, but that is not necessary in the current
-  // zk implementation.
+  // WARNING: This method is not constant time and must only be used for
+  // public computations (for example, public curve points / public scalars in
+  // the current zk implementation), never for secret scalar multiplication.
   ECPoint scalar_multf(const ECPoint& p, const N& scalar) const {
     ECPoint x = p;
     ECPoint p3 = zero();
@@ -161,7 +162,8 @@ class EllipticCurve {
   // Computes the multi-scalar elliptic curve point multiplication.
   // Input: p1, p2, ..., pn, and scalars s1, s2, ..., sn
   // Output: p1 * s1 + p2 * s2 + ... + pn * sn
-  // This method is not a constant time operation.
+  // WARNING: This method is also not constant time and must only be used for
+  // public multi-scalar computations.
   ECPoint scalar_multf(size_t n, ECPoint p[/*n*/], N scalar[/*n*/]) const {
     if (n == 0) {
       return zero();

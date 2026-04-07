@@ -210,6 +210,8 @@ class CborWitness {
         } else if (count27) {
           return 9;
         } else {
+          // Defensive: witness generation should always encode atom sizes via
+          // one of the recognized count flags above.
           check(false, "unwitnessed count (atom)");
           return 0;
         }
@@ -221,6 +223,8 @@ class CborWitness {
         } else if (count24) {
           return 2;
         } else {
+          // Defensive: arrays/maps in this witness path only support the
+          // compact encodings handled above.
           check(false, "unwitnessed count (item)");
           return 0;
         }
@@ -233,19 +237,26 @@ class CborWitness {
           if (valid_nextb) {
             return 2 + nextb;
           } else {
+            // Defensive: `nextb` should already have been range-checked before
+            // the witness path reaches this helper.
             check(false, "invalid nextb");
             return 0;
           }
         } else {
+          // Defensive: byte/text witness generation should always select one of
+          // the supported count encodings above.
           check(false, "unwitnessed count (bytes)");
           return 0;
         }
 
       case 7: /* special */
+        // Defensive: special values are not expected in the current witness
+        // generation flow.
         check(false, "unwitnessed special");
         return 0;
 
       default:
+        // Unreachable: all CBOR major types are covered above.
         check(false, "can't happen");
         return 0;
     }
@@ -259,9 +270,13 @@ class CborWitness {
       if (have_nextb) {
         return nextb;
       } else {
+        // Defensive: the 24 marker requires a following byte to have been
+        // supplied by the caller.
         check(false, "!have_nextb");
       }
     } else {
+      // Defensive: this helper only supports the compact count encodings used
+      // by the current witness generator.
       check(false, "count > 24");
     }
     return 0xdeadbeef;
