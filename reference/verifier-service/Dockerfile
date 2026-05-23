@@ -1,5 +1,6 @@
 # Stage 1: Create a dev image and run tests
-FROM golang:latest AS builder
+FROM golang:1.24 AS builder
+ARG BUILD_JOBS=4
 RUN apt update -y && apt install -y clang cmake libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev
 WORKDIR /reference/verifier-service/zk/
 COPY lib /reference/verifier-service/zk/lib/
@@ -8,8 +9,8 @@ COPY lib/circuits/mdoc/circuits /reference/verifier-service/zk/server/circuits/L
 
 RUN CXX=clang++ cmake -D CMAKE_BUILD_TYPE=Release -S lib -B build --install-prefix /reference/verifier-service/zk/install && \
     cd build && \
-    make -j 16 install && \
-    ctest -j 16
+    make -j "${BUILD_JOBS}" install && \
+    ctest -j "${BUILD_JOBS}" --output-on-failure
 
 RUN cd server && \
     go mod download && \
@@ -17,7 +18,7 @@ RUN cd server && \
     cd zk && go test -v
 
 # Stage 2: Create a runtime image without dev
-FROM golang:latest
+FROM golang:1.24
 WORKDIR /reference/verifier-service/zk/
 RUN apt update -y && apt install -y libssl3 libzstd1 zlib1g
 COPY --from=builder /reference/verifier-service/zk/server/circuits /reference/verifier-service/zk/circuits/

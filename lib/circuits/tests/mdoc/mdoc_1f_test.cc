@@ -52,6 +52,10 @@
 namespace proofs {
 namespace {
 
+bool SanitizedMdocFixtures() {
+  return kMdocExamplesSanitized || mdoc_tests[0].mdoc_size == 0;
+}
+
 template <class rsigw, class csigw, class Logic>
 void copy_sig(csigw& cw, const rsigw& rw, const Logic& L) {
   cw.rx = L.konst(rw.rx_);
@@ -163,6 +167,10 @@ void fill_eval_witness(MW& vw, const RMW& rvw, const Logic& L) {
 }
 
 TEST(jwt, EvalJWT) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   using EvaluationBackend = EvaluationBackend<Fp256Base>;
   using MDL = mdoc_1f<Logic<Fp256Base, EvaluationBackend>, Fp256Base, P256, 1>;
   using MW = MDL::Witness;
@@ -175,7 +183,7 @@ TEST(jwt, EvalJWT) {
   MW mw(1);
   RMW rmw(1, p256, p256_scalar);
 
-  auto t0 = mdoc_tests[5];
+  auto t0 = mdoc_tests[0];
   auto pkX = p256_base.of_string(t0.pkx);
   auto pkY = p256_base.of_string(t0.pky);
 
@@ -291,6 +299,10 @@ void fill_input(Dense<Fp256Base>& W, const MdocTests& t0, const Fp256Base& f,
 }
 
 TEST(Mdoc1fTest, RunsExamples) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   set_log_level(INFO);
 
   // Compile the circuit
@@ -298,7 +310,7 @@ TEST(Mdoc1fTest, RunsExamples) {
 
   // Now that small examples that use different namespaces have been added,
   // change this test to only try the "website explainer" example.
-  const auto& test = mdoc_tests[5];
+  const auto& test = mdoc_tests[0];
 
   log(INFO, "Running example size %zu", test.mdoc_size);
 
@@ -323,11 +335,16 @@ TEST(Mdoc1fTest, RunsExamples) {
 // ============ Benchmarks =====================================================
 
 void BM_Mdoc1fProver(benchmark::State& state) {
+  if (SanitizedMdocFixtures()) {
+    state.SkipWithError("sanitized build omits mdoc proof fixtures");
+    return;
+  }
+
   std::unique_ptr<Circuit<Fp256Base>> CIRCUIT = make_mdoc1f_circuit(p256_base);
 
   auto W = Dense<Fp256Base>(1, CIRCUIT->ninputs);
 
-  auto t0 = mdoc_tests[5];
+  auto t0 = mdoc_tests[0];
   fill_input(W, t0, p256_base);
 
   using f2_p256 = Fp2<Fp256Base>;

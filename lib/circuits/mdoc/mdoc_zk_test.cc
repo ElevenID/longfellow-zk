@@ -116,52 +116,17 @@ typedef struct {
   const MdocTests* mdoc;
 } TwoClaims;
 
+bool SanitizedMdocFixtures() {
+  return kMdocExamplesSanitized || mdoc_tests[0].mdoc_size == 0;
+}
+
 TEST_F(MdocZKTest, one_claim) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   const Claims tests[] = {
-      {"+18-mdoc[0]", {test::age_over_18}, &mdoc_tests[0]},
-      {"+18-mdoc[1]", {test::age_over_18}, &mdoc_tests[1]},
-      {"+18-mdoc[2]", {test::age_over_18}, &mdoc_tests[2]},
-      {"+18-mdoc[9]", {test::europa_age_over_18}, &mdoc_tests[9]},
-      {"familyname_mustermann-mdoc[3]",
-       {test::familyname_mustermann},
-       &mdoc_tests[3]},
-      {"birthdate_1971_09_01-mdoc[3]",
-       {test::birthdate_1971_09_01},
-       &mdoc_tests[3]},
-      {"height_175-mdoc[3]", {test::height_175}, &mdoc_tests[3]},
-      // Test Google IDPass which uses a different docType.
-      {"birthdate_1998_09_04-idpass-mdoc[4]",
-       {test::birthdate_1998_09_04},
-       &mdoc_tests[4]},
-      // Website explainer example.
-      {"age_over_18-website-mdoc[5]", {test::age_over_18}, &mdoc_tests[5]},
-      // Large mdoc from 2025-06-10.
-      {"not_over_18-large-mdoc[6]", {test::not_over_18}, &mdoc_tests[6]},
-      // Integer field.
-      {"age_birth_year-mdoc[8]", {test::age_birth_year}, &mdoc_tests[8]},
-      // AAMVA DHS_compliance field.
-      {"DHS_compliance-mdoc[10]",
-       {test::aamva_dhs_compliance},
-       &mdoc_tests[10]},
-      // Sparkasse Age Assurance test.
-      {"Sparkasse_Age-mdoc[11]", {test::age_over_18}, &mdoc_tests[11]},
-      // MT Prod test
-      {"MT_Prod_Age_Over_18-mdoc[12]", {test::age_over_18}, &mdoc_tests[12]},
-      {"MT_Prod_Age_Over_18-mdoc[14]", {test::age_over_18}, &mdoc_tests[14]},
-      // AZ Prod test
-      {"AZ_Prod_Age_Over_18-mdoc[13]", {test::age_over_18}, &mdoc_tests[13]},
-      // EUAV order tests
-      {"EUAV_Age_Over_18-mdoc[15]", {test::age_over_18}, &mdoc_tests[15]},
-      {"EUAV_Age_Over_18-mdoc[16]", {test::age_over_18}, &mdoc_tests[16]},
-      {"EUAV_Age_Over_18-mdoc[17]", {test::age_over_18}, &mdoc_tests[17]},
-      {"EUAV_Age_Over_18-mdoc[18]", {test::age_over_18}, &mdoc_tests[18]},
-      {"EUAV_Age_Over_18-mdoc[19]", {test::age_over_18}, &mdoc_tests[19]},
-      {"EUAV_Age_Over_18-mdoc[20]", {test::age_over_18}, &mdoc_tests[20]},
-      {"EUAV_Age_Over_18-mdoc[21]", {test::age_over_18}, &mdoc_tests[21]},
-      {"EUAV_Age_Over_18-mdoc[22]", {test::age_over_18}, &mdoc_tests[22]},
-      {"EUAV_Age_Over_18-mdoc[23]", {test::age_over_18}, &mdoc_tests[23]},
-      {"EUAV_Age_Over_18-mdoc[24]", {test::age_over_18}, &mdoc_tests[24]},
-      {"Aadhaar_age_above18-mdoc[25]", {test::age_above18}, &mdoc_tests[25]},
+      {"age_over_18-synthetic-mdoc[0]", {test::age_over_18}, &mdoc_tests[0]},
   };
 
   for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {
@@ -170,6 +135,10 @@ TEST_F(MdocZKTest, one_claim) {
 }
 
 TEST_F(MdocZKTest, long_attribute) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   uint8_t* zkproof;
   size_t proof_len;
   RequestedAttribute attrs[1] = {test::age_over_18};
@@ -208,38 +177,34 @@ TEST_F(MdocZKTest, long_attribute) {
 }
 
 TEST_F(MdocZKTest, two_claims) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   const TwoClaims two_tests[] = {
       {
-          "18+,familyname_mustermann-mdoc[3]",
+      "18+,familyname_mustermann-mdoc[0]",
           {
               test::age_over_18,
               test::familyname_mustermann,
           },
-          &mdoc_tests[3],
+      &mdoc_tests[0],
       },
       {
-          "18+,birthdate_1971_09_01-mdoc[3]",
+      "18+,birthdate_1971_09_01-mdoc[0]",
           {
               test::age_over_18,
               test::birthdate_1971_09_01,
           },
-          &mdoc_tests[3],
+      &mdoc_tests[0],
       },
       {
-          "height175,issue_date_2024-03-15-mdoc[3]",
+      "height175,issue_date_2024-03-15-mdoc[0]",
           {
               test::height_175,
               test::issue_date_2024_03_15,
           },
-          &mdoc_tests[3],
-      },
-      {
-          "birthdate_1968_04_27,issue_date_2025-07-21T04:00:00Z-mdoc[8]",
-          {
-              test::birthdate_1968_04_27,
-              test::issue_date_2025_07_21,
-          },
-          &mdoc_tests[7],
+      &mdoc_tests[0],
       },
   };
 
@@ -249,12 +214,14 @@ TEST_F(MdocZKTest, two_claims) {
 }
 
 TEST_F(MdocZKTest, wrong_witness) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   const Claims fail_tests[] = {
       {"fail-not_over_18-mdoc[0]", {test::not_over_18}, &mdoc_tests[0]},
-      {"fail-not_over_18-mdoc[1]", {test::not_over_18}, &mdoc_tests[1]},
-      {"fail-not_over_18-mdoc[2]", {test::not_over_18}, &mdoc_tests[2]},
       {
-          "fail-birthdate_1971_09_01-mdoc[3]",
+          "fail-birthdate_1971_09_01-mdoc[0]",
           {RequestedAttribute(
               {.namespace_id = {'o', 'r', 'g', '.', 'i', 's', 'o', '.', '1',
                                 '8', '0', '1', '3', '.', '5', '.', '1'},
@@ -264,10 +231,10 @@ TEST_F(MdocZKTest, wrong_witness) {
                .namespace_len = 17,
                .id_len = 10,
                .cbor_value_len = 14})},
-          &mdoc_tests[3],
+              &mdoc_tests[0],
       },
       {
-          "fail-birthdate_1871_09_01-mdoc[3]",
+              "fail-birthdate_1871_09_01-mdoc[0]",
           {RequestedAttribute(
               {.namespace_id = {'o', 'r', 'g', '.', 'i', 's', 'o', '.', '1',
                                 '8', '0', '1', '3', '.', '5', '.', '1'},
@@ -277,10 +244,10 @@ TEST_F(MdocZKTest, wrong_witness) {
                .namespace_len = 17,
                .id_len = 10,
                .cbor_value_len = 14})},
-          &mdoc_tests[3],
+              &mdoc_tests[0],
       },
       {
-          "fail-birthdate_1971_09_01-mdoc[3]",
+              "fail-birthdate_1971_09_01-mdoc[0]",
           {RequestedAttribute(
               {.namespace_id = {'o', 'r', 'g', '.', 'i', 's', 'o', '.', '1',
                                 '8', '0', '1', '3', '.', '5', '.', '1'},
@@ -290,7 +257,7 @@ TEST_F(MdocZKTest, wrong_witness) {
                .namespace_len = 17,
                .id_len = 10,
                .cbor_value_len = 15})},
-          &mdoc_tests[3],
+              &mdoc_tests[0],
       },
   };
 
@@ -388,7 +355,7 @@ TEST_F(MdocZKTest, bad_arguments) {
 
   // Invalid attributes, two different namespaces.
   RequestedAttribute attrs2[2] = {test::age_over_18,
-                                  test::aamva_name_suffix_mr};
+                                  test::europa_age_over_18};
 
   EXPECT_EQ(run_mdoc_prover(circuit, sizeof(circuit), mdoc, sizeof(mdoc), pk,
                             pk, tr, sizeof(tr), attrs2, 2, now,
@@ -488,6 +455,10 @@ TEST_F(MdocZKTest, bad_arguments) {
 }
 
 TEST_F(MdocZKTest, attr_mismatch) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   uint8_t* zkproof;
   size_t proof_len;
   constexpr int num_attrs = 2;
@@ -515,6 +486,10 @@ TEST_F(MdocZKTest, attr_mismatch) {
 }
 
 TEST_F(MdocZKTest, bad_proofs) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   set_log_level(ERROR);
   constexpr int num_attrs = 1;
   const ZkSpecStruct& zk_spec_1 = kZkSpecs[0];
@@ -656,6 +631,11 @@ static const Claims benchmark_claim = {
 };
 
 void BM_MdocProver(benchmark::State& state) {
+  if (SanitizedMdocFixtures()) {
+    state.SkipWithError("sanitized build omits mdoc proof fixtures");
+    return;
+  }
+
   set_log_level(ERROR);
 
   const ZkSpecStruct& zk_spec_1 = kZkSpecs[0];
@@ -685,6 +665,11 @@ void BM_MdocProver(benchmark::State& state) {
 BENCHMARK(BM_MdocProver);
 
 void BM_MdocVerifier(benchmark::State& state) {
+  if (SanitizedMdocFixtures()) {
+    state.SkipWithError("sanitized build omits mdoc proof fixtures");
+    return;
+  }
+
   set_log_level(ERROR);
 
   const ZkSpecStruct& zk_spec_1 = kZkSpecs[0];

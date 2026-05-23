@@ -51,7 +51,15 @@ declare these types globally.
 // For now, mac is chosen here.
 using gf2k = GF2_128<>::Elt;
 
+bool SanitizedMdocFixtures() {
+  return kMdocExamplesSanitized || mdoc_tests[0].mdoc_size == 0;
+}
+
 TEST(mdoc, mdoc_signature_test) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   using MdocSw = MdocSignatureWitness<P256, Fp256Scalar>;
   using Elt = Fp256Base::Elt;
 
@@ -100,7 +108,7 @@ TEST(mdoc, mdoc_signature_test) {
   MdocSw sw(p256, p256_scalar, gf);
 
   {
-    constexpr size_t t_ind = 2;
+    constexpr size_t t_ind = 0;
     const uint8_t* mdoc = mdoc_tests[t_ind].mdoc;
     pkX = p256_base.of_string(mdoc_tests[t_ind].pkx);
     pkY = p256_base.of_string(mdoc_tests[t_ind].pky);
@@ -169,7 +177,7 @@ TEST(mdoc, mdoc_issuer_list_valid) {
   using Elt = Fp256Base::Elt;
   // Verify the two constraints on issuer lists.
 
-  size_t sz = sizeof(kIssuerPKY) / sizeof(char*);
+  size_t sz = sizeof(kIssuerPKY) / sizeof(kIssuerPKY[0]);
   std::vector<Elt> pkY(sz);
   for (size_t i = 0; i < sz; ++i) {
     Elt pkX = p256_base.of_string(kIssuerPKX[i]);
@@ -186,6 +194,10 @@ TEST(mdoc, mdoc_issuer_list_valid) {
 }
 
 TEST(mdoc, mdoc_signature_test_with_issuer_list) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   using MdocSw = MdocSignatureWitness<P256, Fp256Scalar>;
   using Elt = Fp256Base::Elt;
 
@@ -246,7 +258,7 @@ TEST(mdoc, mdoc_signature_test_with_issuer_list) {
   MdocSw sw(p256, p256_scalar, gf);
 
   {
-    constexpr size_t t_ind = 2;
+    constexpr size_t t_ind = 0;
     const uint8_t* mdoc = mdoc_tests[t_ind].mdoc;
     pkX = p256_base.of_string(mdoc_tests[t_ind].pkx);
     pkY = p256_base.of_string(mdoc_tests[t_ind].pky);
@@ -273,7 +285,7 @@ TEST(mdoc, mdoc_signature_test_with_issuer_list) {
     }
 
     // It is OK to repeat the issuers.
-    size_t numIssuer = sizeof(kIssuerPKX) / sizeof(char*);
+    size_t numIssuer = sizeof(kIssuerPKX) / sizeof(kIssuerPKX[0]);
     for (size_t i = 0; i < MAX_ISSUERS; ++i) {
       issuerX[i] = p256_base.of_string(kIssuerPKX[i % numIssuer]);
       issuerY[i] = p256_base.of_string(kIssuerPKY[i % numIssuer]);
@@ -371,9 +383,9 @@ void mdoc_hash_run(const typename Field::Elt& omega, uint64_t omega_order,
     log(INFO, "Compile done");
   }
 
-  // ======== Witness: use the large Canonical Playground example
+  // ======== Witness: use the synthetic fixture corpus when present.
   MdocHw hw(attrs.size(), p256, F);
-  constexpr size_t t_ind = 3;
+  constexpr size_t t_ind = 0;
   const uint8_t* mdoc = mdoc_tests[t_ind].mdoc;
 
   MdocProverErrorCode ok = hw.compute_witness(
@@ -418,6 +430,10 @@ void mdoc_hash_run(const typename Field::Elt& omega, uint64_t omega_order,
 }
 
 TEST(mdoc, mdoc_hash_test_fp128) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   std::vector<RequestedAttribute> oa;
   oa.push_back(test::age_over_18);
 
@@ -428,6 +444,10 @@ TEST(mdoc, mdoc_hash_test_fp128) {
 }
 
 TEST(mdoc, mdoc_hash_test_fp128_2) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   std::vector<RequestedAttribute> oa;
   oa.push_back(test::age_over_18);
 

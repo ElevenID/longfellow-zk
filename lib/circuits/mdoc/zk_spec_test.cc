@@ -35,6 +35,10 @@
 namespace proofs {
 namespace {
 
+bool SanitizedMdocFixtures() {
+  return kMdocExamplesSanitized || mdoc_tests[0].mdoc_size == 0;
+}
+
 TEST(ZkSpecTest, FindZkSpec) {
   const ZkSpecStruct& zk_spec = kZkSpecs[0];
 
@@ -112,7 +116,7 @@ void test_proof_creation_and_verification(const ZkSpecStruct& zk_spec) {
   std::string circuit_bytes;
   EXPECT_OK(file::GetContents(cp, &circuit_bytes, file::Defaults()));
 
-  const MdocTests* test = &mdoc_tests[3]; /* Sprind example w/4 attributes  */
+  const MdocTests* test = &mdoc_tests[0];
   RequestedAttribute claims[4] = {test::age_over_18,
                                   test::familyname_mustermann,
                                   test::birthdate_1971_09_01, test::height_175};
@@ -143,6 +147,10 @@ void test_proof_creation_and_verification(const ZkSpecStruct& zk_spec) {
 
 // Test proof creation and verification against all supported circuits.
 TEST(ZkSpecTest, ProofCreationAndVerification) {
+  if (SanitizedMdocFixtures()) {
+    GTEST_SKIP() << "sanitized build omits mdoc proof fixtures";
+  }
+
   for (size_t k = 0; k < kNumZkSpecs; ++k) {
     const ZkSpecStruct& zk_spec = kZkSpecs[k];
     log(INFO, "Testing circuit hash %s, %d attributes", zk_spec.circuit_hash,

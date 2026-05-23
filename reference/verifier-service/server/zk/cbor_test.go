@@ -22,6 +22,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +48,54 @@ func TestLoadIssuerRootCA(t *testing.T) {
 
 	if len(IssuerRoots.Subjects()) == 0 {
 		t.Error("IssuerRoots should not be empty after loading a CA")
+	}
+}
+
+func TestBundledIssuerRootsAreSynthetic(t *testing.T) {
+	pemBytes, err := os.ReadFile("../certs.pem")
+	if err != nil {
+		t.Fatalf("failed to read bundled certs.pem: %v", err)
+	}
+
+	IssuerRoots = x509.NewCertPool()
+	if err := LoadIssuerRootCA(pemBytes); err != nil {
+		t.Fatalf("LoadIssuerRootCA() bundled synthetic roots error = %v", err)
+	}
+
+	count := 0
+	for len(pemBytes) > 0 {
+		block, rest := pem.Decode(pemBytes)
+		if block == nil {
+			break
+		}
+		pemBytes = rest
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("bundled cert %d failed to parse: %v", count+1, err)
+		}
+		count++
+		if !cert.IsCA {
+			t.Errorf("bundled cert %d is not a CA", count)
+		}
+		if got := cert.Subject.Country; len(got) != 1 || got[0] != "ZZ" {
+			t.Errorf("bundled cert %d Country = %v, want [ZZ] synthetic marker", count, got)
+		}
+		if got := cert.Subject.Organization; len(got) != 1 || got[0] != "Longfellow ZK Synthetic Trust" {
+			t.Errorf("bundled cert %d Organization = %v, want synthetic trust marker", count, got)
+		}
+		if !strings.Contains(cert.Subject.CommonName, "Synthetic") {
+			t.Errorf("bundled cert %d CommonName = %q, want Synthetic marker", count, cert.Subject.CommonName)
+		}
+	}
+
+	if count != 3 {
+		t.Fatalf("bundled cert count = %d, want 3 synthetic issuer roots", count)
+	}
+	if got := len(IssuerRoots.Subjects()); got != count {
+		t.Fatalf("IssuerRoots subjects = %d, want %d", got, count)
 	}
 }
 

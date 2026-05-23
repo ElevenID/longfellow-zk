@@ -19,8 +19,8 @@
 //   - loads trusted CA certificates that will be used for validating the proofs.
 //     Make sure you load the signing CA certificates from the issuers you expect
 //     to receive the identity documents for.
-//     by default certs.pm contain only a handful of certificates from known
-//     issuers and test certificates from Google
+//     by default certs.pem contains only synthetic test roots; production
+//     deployments must provide their own approved issuer trust material.
 //   - starts the server on the provided port (8888 by default)
 package main
 
