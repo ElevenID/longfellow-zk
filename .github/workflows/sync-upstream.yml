@@ -14,7 +14,7 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
       
@@ -33,7 +33,7 @@ jobs:
         id: check
         run: |
           BEHIND=$(git rev-list --count HEAD..upstream/main)
-          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
       
       - name: Create sync PR
         if: steps.check.outputs.behind > 0
@@ -41,9 +41,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="sync-upstream-$(date +%Y%m%d)"
-          git checkout -b $BRANCH
+          git checkout -b "$BRANCH"
           git merge upstream/main --no-edit || git merge --abort
-          git push origin $BRANCH
+          git push origin "$BRANCH"
           gh pr create --title "Sync with upstream google/longfellow-zk" \
             --body "Automated sync from upstream. ${{ steps.check.outputs.behind }} commits behind." \
-            --base main --head $BRANCH
+            --base main --head "$BRANCH"
