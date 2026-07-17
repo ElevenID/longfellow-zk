@@ -49,12 +49,12 @@ jobs:
             os: ubuntu-24.04
             container_image: "fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814"
             cpp_compiler: clang++
-            install_command: "yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel"
+            install_command: "yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel libpfm-devel"
           - os_name: "Fedora 41"
             os: ubuntu-24.04
             container_image: "fedora:41@sha256:f1a3fab47bcb3c3ddf3135d5ee7ba8b7b25f2e809a47440936212a3a50957f3d"
             cpp_compiler: clang++
-            install_command: "yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel"
+            install_command: "yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel libpfm-devel"
 
     steps:
     - name: Install dependencies
@@ -75,10 +75,10 @@ jobs:
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: >
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+        cmake -B "${{ steps.strings.outputs.build-output-dir }}"
+        -DCMAKE_CXX_COMPILER="${{ matrix.cpp_compiler }}"
         -DCMAKE_BUILD_TYPE=Release
-        -S $GITHUB_WORKSPACE/lib
+        -S "$GITHUB_WORKSPACE/lib"
 
     - name: Build
       # Build your program with the given configuration. Note that --config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
