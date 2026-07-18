@@ -45,7 +45,7 @@ imaging:
 # Language configuration
 languages:
   en:
-    languageName: English
+    label: English
     title: Longfellow
     params:
       description: A ZK protocol
