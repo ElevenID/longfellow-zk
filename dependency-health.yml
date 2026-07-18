@@ -1,0 +1,14 @@
+version: 1
+dependencies:
+  - package: google/longfellow-zk
+    ecosystem: git
+    owner: ElevenID
+    upstream: https://github.com/google/longfellow-zk
+    current: upstream-main
+    target: upstream-main
+    status: maintained
+    decision: retain
+    advisories: []
+    tracking-issue: https://github.com/ElevenID/longfellow-zk/issues/9
+    review-after: 2026-10-18
+    rationale: ElevenID carries workflow hardening while preserving upstream behavior.

@@ -16,7 +16,7 @@ jobs:
       group: ${{ github.workflow }}-${{ github.ref }}
     steps:
     - name: Checkout
-      uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # pin@v3
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # pin@v3
       with:
         fetch-depth: 0         # Fetch all history for .GitInfo and .Lastmod
 
@@ -27,9 +27,9 @@ jobs:
         extended: true
 
     - name: Setup Node
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.4.0
       with:
-        node-version: '18'
+        node-version: "24"
         cache: 'npm'
         # The action defaults to search for the dependency file (package-lock.json,
         # npm-shrinkwrap.json or yarn.lock) in the repository root, and uses its

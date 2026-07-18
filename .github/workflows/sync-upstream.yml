@@ -2,77 +2,99 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+    - cron: "0 6 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
+    name: Prepare reviewed upstream sync
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+      issues: write
+      pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Checkout fork main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           fetch-depth: 0
-      
-      - name: Configure Git
+          persist-credentials: true
+
+      - name: Fetch Google upstream
+        shell: bash
         run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-      
-      - name: Add upstream remote
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/google/longfellow-zk.git
+          git fetch --prune --tags upstream main
+
+      - name: Measure upstream drift
+        id: drift
+        shell: bash
         run: |
-          if ! git remote get-url upstream >/dev/null 2>&1; then
-            git remote add upstream https://github.com/google/longfellow-zk.git
+          echo "behind=$(git rev-list --count origin/main..upstream/main)" >> "$GITHUB_OUTPUT"
+
+      - name: Close obsolete synchronization pull request
+        if: steps.drift.outputs.behind == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          number=$(gh pr list --state open --head automation/sync-upstream --json number --jq '.[0].number // empty')
+          if [[ -n "$number" ]]; then
+            gh pr close "$number" --comment "Upstream is fully synchronized; closing the obsolete synchronization PR."
           fi
-      
-      - name: Fetch upstream
-        run: git fetch upstream
-      
-      - name: Check for changes
-        id: check
+
+      - name: Merge upstream into synchronization branch
+        if: steps.drift.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          BEHIND=$(git rev-list --count HEAD..upstream/main)
-          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
-      
-      - name: Prepare sync branch
-        if: steps.check.outputs.behind > 0
-        run: |
-          BRANCH="automation/sync-upstream"
-          git checkout -B "$BRANCH"
-          if ! git merge upstream/main --no-edit; then
-            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
-            unsafe_conflict=false
-            for path in "${conflicts[@]}"; do
-              case "$path" in
-                .github/workflows/*) ;;
-                *) unsafe_conflict=true ;;
-              esac
-            done
-            if [[ "$unsafe_conflict" == true || "${#conflicts[@]}" -eq 0 ]]; then
-              git merge --abort
-              echo "Upstream source changes require manual conflict resolution."
-              exit 1
+          git config user.name "elevenid-upstream-sync[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git switch --force-create automation/sync-upstream origin/main
+
+          if ! git merge --no-edit upstream/main; then
+            conflicts=$(git diff --name-only --diff-filter=U | sed '/^$/d')
+            git merge --abort
+            gh label create upstream-sync --color 1d76db --description "Automated upstream synchronization" --force
+            existing=$(gh issue list --state open --label upstream-sync --search "Longfellow upstream sync conflict in:title" --json number --jq '.[0].number // empty')
+            body=$(printf 'The weekly sync could not merge `google/longfellow-zk:main` into the ElevenID fork.\n\nConflicting paths:\n```\n%s\n```\n\nResolve the conflict on a reviewed branch; do not bypass the fork security workflows.' "$conflicts")
+            if [[ -n "$existing" ]]; then
+              gh issue comment "$existing" --body "$body"
+            else
+              gh issue create --title "Longfellow upstream sync conflict" --label upstream-sync --body "$body"
             fi
-
-            git checkout --ours -- "${conflicts[@]}"
-            git add -- "${conflicts[@]}"
-            git commit --no-edit
+            exit 1
           fi
 
-          # Retain the fork's reviewed, SHA-pinned workflows. The repository
-          # token intentionally has no authority to replace workflow files.
+          # Preserve the fork-owned workflow policy. Upstream source and test
+          # changes remain intact and must pass the fork's complete CI matrix.
           git restore --source=origin/main --staged --worktree -- .github/workflows
           if ! git diff --cached --quiet; then
             git commit --amend --no-edit
           fi
+          git push --force-with-lease origin automation/sync-upstream
 
-          git push --force-with-lease origin "$BRANCH"
-          {
-            echo "## Upstream sync branch prepared"
-            echo
-            echo "Updated \`$BRANCH\` with ${{ steps.check.outputs.behind }} upstream commits."
-            echo "Open a reviewed pull request from that branch; ElevenID workflow files were retained intentionally."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Create or refresh synchronization pull request
+        if: steps.drift.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEHIND: ${{ steps.drift.outputs.behind }}
+        shell: bash
+        run: |
+          gh label create upstream-sync --color 1d76db --description "Automated upstream synchronization" --force
+          number=$(gh pr list --state open --head automation/sync-upstream --json number --jq '.[0].number // empty')
+          body=$(printf 'Automated reviewed synchronization from `google/longfellow-zk:main`.\n\nUpstream commits: %s\n\nThe ElevenID workflow policy is preserved. Merge only after the complete CMake, Sage, security, and organization-quality checks pass.' "$BEHIND")
+          if [[ -n "$number" ]]; then
+            gh pr edit "$number" --title "Sync with upstream google/longfellow-zk" --body "$body" --add-label upstream-sync
+          else
+            gh pr create --base main --head automation/sync-upstream --title "Sync with upstream google/longfellow-zk" --body "$body" --label upstream-sync
+          fi
