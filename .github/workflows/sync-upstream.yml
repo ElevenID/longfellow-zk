@@ -43,9 +43,23 @@ jobs:
           BRANCH="automation/sync-upstream"
           git checkout -B "$BRANCH"
           if ! git merge upstream/main --no-edit; then
-            git merge --abort
-            echo "Upstream merge requires manual conflict resolution."
-            exit 1
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            unsafe_conflict=false
+            for path in "${conflicts[@]}"; do
+              case "$path" in
+                .github/workflows/*) ;;
+                *) unsafe_conflict=true ;;
+              esac
+            done
+            if [[ "$unsafe_conflict" == true || "${#conflicts[@]}" -eq 0 ]]; then
+              git merge --abort
+              echo "Upstream source changes require manual conflict resolution."
+              exit 1
+            fi
+
+            git checkout --ours -- "${conflicts[@]}"
+            git add -- "${conflicts[@]}"
+            git commit --no-edit
           fi
 
           # Retain the fork's reviewed, SHA-pinned workflows. The repository
