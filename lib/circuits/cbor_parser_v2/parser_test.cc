@@ -469,5 +469,82 @@ void test_parser(const Field& F) {
 TEST(CborParser, MSOPrimeField) { test_parser(Fp<1>("18446744073709551557")); }
 
 TEST(CborParser, MSOBinaryField) { test_parser(GF2_128<>()); }
+
+template <class Field>
+void test_invalid_map_nested_keys(const Field& F) {
+  using CborWitness = CborWitness<Field>;
+  using CborTesting = CborTesting<Field>;
+
+  using EvalBackend = EvaluationBackend<Field>;
+  using Logic = Logic<Field, EvalBackend>;
+  using CborL = Cbor<Logic>;
+
+  const EvalBackend ebk(F);
+  const Logic L(&ebk, F);
+  const CborL CBOR(L);
+  const CborTesting CT(F);
+  const CborWitness CW(F);
+
+  const uint8_t forgery_example[] = {
+      0xA1,  // map(1)
+      0x67, 's', 'u', 'b', 'j', 'e',
+      'c',  't',                     // "subject" (key at level 1, index 1)
+      0xA1,                          // map(1) (value at level 1, index 9)
+      0x64, 'r', 'o', 'l', 'e',      // "role" (key at level 2, index 10)
+      0x65, 'a', 'd', 'm', 'i', 'n'  // "admin" (value at level 2, index 15)
+  };
+  size_t input_len = sizeof(forgery_example);
+  size_t n = input_len;
+
+  std::vector<typename CborWitness::v8> inS(n);
+  std::vector<typename CborWitness::position_witness> pwS(n);
+  CW.compute_witnesses(n, input_len, forgery_example, inS.data(), pwS.data());
+
+  std::vector<typename CborL::v8> in(n);
+  std::vector<typename CborL::position_witness> pw(n);
+  CT.convert_witnesses(n, in.data(), pw.data(), inS.data(), pwS.data());
+
+  std::vector<typename CborL::decode> ds(n);
+  std::vector<typename CborL::parse_output> ps(n);
+  CBOR.decode_and_assert_decode_and_parse(n, ds.data(), ps.data(), in.data(),
+                                          pw.data());
+
+  // Correct assertion for the root map (at level 0, index 0):
+  // The 0th entry of the map is key="subject" (index 1), value="nested map"
+  // (index 9)
+  CBOR.assert_map_entry(n,
+                        CT.index(0),  // map header at index 0
+                        0,            // level 0
+                        CT.index(1),  // key "subject" at index 1
+                        CT.index(9),  // value "nested map" at index 9
+                        CT.index(0),  // entry index 0
+                        ds.data(), ps.data());
+
+#if GTEST_HAS_DEATH_TEST
+  // Forgery:
+  // Asserting that the root map (at level 0, index 0) has entry 0
+  // with key="subject" (index 1) and value="admin" (index 15)!
+  // This SHOULD fail if level enforcement is correct.
+  EXPECT_DEATH(
+      CBOR.assert_map_entry(
+          n,
+          CT.index(0),  // map header at index 0
+          0,            // level 0
+          CT.index(1),  // key "subject" at index 1
+          CT.index(
+              15),      // forged value "admin" at index 15 (nested at level 2!)
+          CT.index(0),  // entry index 0
+          ds.data(), ps.data()),
+      "a != F.zero()");
+#endif
+}
+
+TEST(CborParser, ForgeryPrimeField) {
+  test_invalid_map_nested_keys(Fp<1>("18446744073709551557"));
+}
+TEST(CborParser, ForgeryBinaryField) {
+  test_invalid_map_nested_keys(GF2_128<>());
+}
+
 }  // namespace
 }  // namespace proofs

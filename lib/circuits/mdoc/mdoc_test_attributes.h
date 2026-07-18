@@ -42,6 +42,7 @@ static const RequestedAttribute not_over_18 = {
                      '3', '.', '5', '.', '1'},
     .id = {'a', 'g', 'e', '_', 'o', 'v', 'e', 'r', '_', '1', '8'},
     .cbor_value = {0xf4},
+    .namespace_len = 17,    
     .id_len = 11,
     .cbor_value_len = 1};
 

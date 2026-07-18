@@ -44,6 +44,7 @@
 #include "util/log.h"
 #include "zk/zk_proof.h"
 #include "zk/zk_prover.h"
+#include "zk/zk_testing.h"
 #include "zk/zk_verifier.h"
 #include "benchmark/benchmark.h"
 #include "gtest/gtest.h"
@@ -488,7 +489,7 @@ struct RipemdProverSystem {
         max_blocks(maxBlocks) {}
 
   bool Prove(const std::vector<uint8_t>& message) {
-    zkpr = std::make_unique<ZkProof<Field>>(*circuit, 4, 128);
+    zkpr = std::make_unique<ZkProof<Field>>(*circuit, kLigeroRate, kLigeroNreq);
     Dense<Field> w(1, circuit->ninputs);
     DenseFiller<Field> filler(w);
     RipemdWitness::fill_input<Field, pluckerSize>(
@@ -501,7 +502,8 @@ struct RipemdProverSystem {
   }
 
   bool Verify(const std::vector<uint8_t>& message) {
-    ZkVerifier<Field, RSFactory> verifier(*circuit, rsf, 4, 128, f);
+    ZkVerifier<Field, RSFactory> verifier(*circuit, rsf, kLigeroRate,
+                                          kLigeroNreq, f);
     Transcript tv((uint8_t*)"test", 4);
     verifier.recv_commitment(*zkpr, tv);
     Dense<Field> pub(1, 0);  // Empty public inputs

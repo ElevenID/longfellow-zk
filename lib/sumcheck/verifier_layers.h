@@ -18,14 +18,13 @@
 #include <stddef.h>
 
 #include <cstddef>
-#include <memory>
 
 #include "arrays/affine.h"
-#include "arrays/dense.h"
 #include "arrays/eq.h"
 #include "sumcheck/circuit.h"
 #include "sumcheck/quad.h"
 #include "sumcheck/transcript_sumcheck.h"
+#include "util/panic.h"
 
 namespace proofs {
 // Sumcheck verifier that only verifies the layers.
@@ -49,44 +48,26 @@ class VerifierLayers {
   // direct check or polynomial commitment.
   static bool circuit(const char** why, claims* cl,
                       const Circuit<Field>* CIRCUIT, const Proof<Field>* PROOF,
-                      Challenge<Field>* CH, std::unique_ptr<Dense<Field>> V,
-                      TranscriptSumcheck<Field>& ts, const Field& F) {
+                      Challenge<Field>* CH, TranscriptSumcheck<Field>& ts,
+                      const Field& F) {
     if (why == nullptr || cl == nullptr || CIRCUIT == nullptr ||
         PROOF == nullptr || CH == nullptr) {
       return false;
     }
-    *why = "ok";
 
-    Elt claimV;
-    ts.begin_circuit(CH->q, CH->g);
-
-    if (V->n1_ == 1 && V->n0_ == 1 && V->v_[0] == F.zero()) {
-      // special case of all-zero binding
-      claimV = F.zero();
-    } else {
-      const desire desires[2] = {
-          {V->n1_ == CIRCUIT->nv, "V->n1_ != CIRCUIT->nv"},
-          {V->n0_ == CIRCUIT->nc, "V->n0_ != CIRCUIT->nc"},
-      };
-
-      if (!check(why, 2, desires)) {
-        return false;
-      }
-
-      // initial claim on V[G, Q] for the output V
-      V->bind_all(CIRCUIT->logc, CH->q, F);
-      V->reshape(CIRCUIT->nv);
-      V->bind_all(CIRCUIT->logv, CH->g, F);
-      claimV = V->scalar();
+    if (PROOF->l.size() < CIRCUIT->nl) {
+      *why = "Proof size less than circuit layers";
+      return false;
     }
 
-    // Consider claimV on the binding to P.G as two (identical)
-    // claims, so we can get the induction going.  Thus, alpha in
-    // the first layer is redundant.
+    *why = "ok";
+
+    ts.begin_circuit(CH->q, CH->g);
+
     *cl = claims{
         .nv = CIRCUIT->nv,
         .logv = CIRCUIT->logv,
-        .claim = {claimV, claimV},
+        .claim = {F.zero(), F.zero()},
         .q = CH->q,
         .g = {CH->g, CH->g},
     };
@@ -117,15 +98,15 @@ class VerifierLayers {
   static bool layer_c(const char** why, Elt* claim, size_t logc,
                       const LayerProof<Field>* plr, LayerChallenge<Field>* ch,
                       TranscriptSumcheck<Field>& ts, const Field& F) {
+    proofs::check(logc <= Proof<Field>::kMaxBindings, "logc <= kMaxBindings");
     for (size_t round = 0; round < logc; ++round) {
-      // Change verification equation from
-      //    claim =? (p(0) + p(1))
-      // to p(1) = claim - p(0).
       auto tp = plr->cp[round];
-      auto t1 = F.subf(*claim, tp.t_[0]);
-      ch->cb[round] = ts.round(plr->cp[round]);
-      auto p = tp.to_poly(t1);
-      *claim = p.eval_lagrange(ch->cb[round], F);
+      if (F.addf(tp[0], tp[1]) != *claim) {
+        *why = "claim != p(0) + p(1)";
+        return false;
+      }
+      ch->cb[round] = ts.round(tp);
+      *claim = tp.eval_lagrange(ch->cb[round], F);
     }
 
     return true;
@@ -134,16 +115,16 @@ class VerifierLayers {
   static bool layer_h(const char** why, Elt* claim, size_t logw,
                       const LayerProof<Field>* plr, LayerChallenge<Field>* ch,
                       TranscriptSumcheck<Field>& ts, const Field& F) {
+    proofs::check(logw <= Proof<Field>::kMaxBindings, "logw <= kMaxBindings");
     for (size_t round = 0; round < logw; ++round) {
       for (size_t hand = 0; hand < 2; ++hand) {
-        // Change verification equation from
-        //    claim =? (p(0) + p(1))
-        // to p(1) = claim - p(0).
         auto tp = plr->hp[hand][round];
-        auto t1 = F.subf(*claim, tp.t_[0]);
+        if (F.addf(tp[0], tp[1]) != *claim) {
+          *why = "claim != p(0) + p(1)";
+          return false;
+        }
         ch->hb[hand][round] = ts.round(tp);
-        auto p = tp.to_poly(t1);
-        *claim = p.eval_lagrange(ch->hb[hand][round], F);
+        *claim = tp.eval_lagrange(ch->hb[hand][round], F);
       }
     }
     return true;
@@ -182,6 +163,8 @@ class VerifierLayers {
                                      challenge->alpha, challenge->beta, F);
 
       // bind QUAD[G|r,l] to R, L
+      proofs::check(clr->logw <= Proof<Field>::kMaxBindings,
+                    "clr->logw <= kMaxBindings");
       for (size_t round = 0; round < clr->logw; ++round) {
         for (size_t hand = 0; hand < 2; ++hand) {
           EQUAD->bind_h(challenge->hb[hand][round], hand, F);

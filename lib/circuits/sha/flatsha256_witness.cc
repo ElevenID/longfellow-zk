@@ -122,7 +122,10 @@ void FlatSHA256Witness::transform_and_witness_message(
     size_t n, const uint8_t msg[/*n*/], size_t max, uint8_t &numb,
     uint8_t in[/* 64*max */], BlockWitness bw[/*max*/]) {
   // Compute the exact number of blocks needed for hashing.
-  numb = ceildiv<size_t>(n + 9, 64);
+  size_t num_blocks = ceildiv<size_t>(n + 9, 64);
+  check(num_blocks <= max, "Message too big");
+  check(num_blocks <= 255, "Number of blocks causes overflow");
+  numb = static_cast<uint8_t>(num_blocks);
 
   size_t ii = 0;
   for (size_t i = 0; i < n; ++i, ++ii) {
@@ -137,7 +140,7 @@ void FlatSHA256Witness::transform_and_witness_message(
   while ((ii % 64) < 56) {
     in[ii++] = 0;
   }
-  SHA256_wu64be(&in[ii], n * 8);
+  SHA256_wu64be(&in[ii], static_cast<uint64_t>(n) * 8);
   ii += 8;
   check(ii % 64 == 0, "Invalid padding");
 

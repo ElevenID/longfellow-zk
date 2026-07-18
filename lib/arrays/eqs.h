@@ -46,6 +46,7 @@ class Eqs : public Dense<Field> {
   static std::vector<Elt> raw_eq2(size_t logn, corner_t n, const Elt* G0,
                                   const Elt* G1, const Elt& alpha,
                                   const Field& F) {
+    check(n > 0, "n > 0");
     std::vector<Elt> eq(n);
     fill_recursive(&eq[0], logn, n, G0, G1, F.one(), alpha, F);
     return eq;

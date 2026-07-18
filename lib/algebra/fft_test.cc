@@ -42,7 +42,7 @@ Elt omega = F.of_string(
     "19103219067921713944291392827692070036145651957329286315305642004821462161"
     "904");
 size_t omega_order = 1 << 28;
-constexpr size_t N = 1 << 16;
+constexpr size_t max_n = 1 << 19;
 
 static Elt reroot(const Elt& omega_n, size_t n, size_t r, const Field& FF) {
   Elt omega_r = omega_n;
@@ -54,61 +54,65 @@ static Elt reroot(const Elt& omega_n, size_t n, size_t r, const Field& FF) {
 }
 
 TEST(FFT, Inverse) {
-  size_t n = N;
-  std::vector<Elt> A(n);
-  for (size_t i = 0; i < n; ++i) {
-    A[i] = rng.next();
-  }
-  std::vector<Elt> B(A);
-  FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
-  FFT<Field>::fftb(&A[0], n, omega, omega_order, F);
-  for (size_t i = 0; i < n; ++i) {
-    F.mul(A[i], F.invertf(F.of_scalar(n)));
-  }
-  for (size_t i = 0; i < n; ++i) {
-    EXPECT_EQ(A[i], B[i]);
+  for (size_t n = 1; n <= max_n; n += n) {
+    std::vector<Elt> A(n);
+    for (size_t i = 0; i < n; ++i) {
+      A[i] = rng.next();
+    }
+    std::vector<Elt> B(A);
+    FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
+    FFT<Field>::fftb(&A[0], n, omega, omega_order, F);
+    for (size_t i = 0; i < n; ++i) {
+      F.mul(A[i], F.invertf(F.of_scalar(n)));
+    }
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_EQ(A[i], B[i]);
+    }
   }
 }
 
 TEST(FFT, Linear) {
-  size_t n = N;
-  std::vector<Elt> A(n);
-  std::vector<Elt> B(n);
-  std::vector<Elt> C(n);
-  auto k0 = rng.next();
-  auto k1 = rng.next();
-  for (size_t i = 0; i < n; ++i) {
-    A[i] = rng.next();
-    B[i] = rng.next();
-    C[i] = F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i]));
-  }
-  FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
-  FFT<Field>::fftf(&B[0], n, omega, omega_order, F);
-  FFT<Field>::fftf(&C[0], n, omega, omega_order, F);
-  for (size_t i = 0; i < n; ++i) {
-    EXPECT_EQ(C[i], F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i])));
+  for (size_t n = 1; n <= max_n; n += n) {
+    std::vector<Elt> A(n);
+    std::vector<Elt> B(n);
+    std::vector<Elt> C(n);
+    auto k0 = rng.next();
+    auto k1 = rng.next();
+    for (size_t i = 0; i < n; ++i) {
+      A[i] = rng.next();
+      B[i] = rng.next();
+      C[i] = F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i]));
+    }
+    FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
+    FFT<Field>::fftf(&B[0], n, omega, omega_order, F);
+    FFT<Field>::fftf(&C[0], n, omega, omega_order, F);
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_EQ(C[i], F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i])));
+    }
   }
 }
 
 TEST(FFT, Impulse) {
-  size_t n = N;
-  std::vector<Elt> A(n);
-  std::vector<Elt> B(n);
-  std::vector<Elt> C(n);
-  Elt k0 = rng.next();
-  Elt k1 = rng.next();
+  for (size_t n = 1; n <= max_n; n += n) {
+    std::vector<Elt> A(n);
+    std::vector<Elt> B(n);
+    std::vector<Elt> C(n);
+    Elt k0 = rng.next();
+    Elt k1 = rng.next();
 
-  for (size_t i = 0; i < n; ++i) {
-    A[i] = i == 0 ? F.zero() : F.one();
-    B[i] = rng.next();
-    C[i] = F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i]));  // k0 * A[i] + k1 * B[i]
-  }
+    for (size_t i = 0; i < n; ++i) {
+      A[i] = i == 0 ? F.zero() : F.one();
+      B[i] = rng.next();
+      C[i] =
+          F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i]));  // k0 * A[i] + k1 * B[i]
+    }
 
-  FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
-  FFT<Field>::fftf(&B[0], n, omega, omega_order, F);
-  FFT<Field>::fftf(&C[0], n, omega, omega_order, F);
-  for (size_t i = 0; i < n; ++i) {
-    EXPECT_EQ(C[i], F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i])));
+    FFT<Field>::fftf(&A[0], n, omega, omega_order, F);
+    FFT<Field>::fftf(&B[0], n, omega, omega_order, F);
+    FFT<Field>::fftf(&C[0], n, omega, omega_order, F);
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_EQ(C[i], F.addf(F.mulf(k0, A[i]), F.mulf(k1, B[i])));
+    }
   }
 }
 
@@ -119,32 +123,33 @@ TEST(FFT, RootOfUnity) {
 }
 
 TEST(FFT, Shift) {
-  size_t n = N;
-  std::vector<Elt> A(n);
-  std::vector<Elt> B(n);
-  std::vector<Elt> C(n);
-  Elt omega_n = reroot(omega, omega_order, n, F);
-  Elt k0 = rng.next();
-  Elt k1 = rng.next();
+  for (size_t n = 1; n <= max_n; n += n) {
+    std::vector<Elt> A(n);
+    std::vector<Elt> B(n);
+    std::vector<Elt> C(n);
+    Elt omega_n = reroot(omega, omega_order, n, F);
+    Elt k0 = rng.next();
+    Elt k1 = rng.next();
 
-  for (size_t i = 0; i < n; ++i) {
-    A[i] = rng.next();
-    B[i] = rng.next();
-  }
-  for (size_t i = 0; i < n; ++i) {
-    // k0 * A[(i + 1) % n] + k1 * B[i]
-    C[i] = F.addf(F.mulf(k0, A[(i + 1) % n]), F.mulf(k1, B[i]));
-  }
+    for (size_t i = 0; i < n; ++i) {
+      A[i] = rng.next();
+      B[i] = rng.next();
+    }
+    for (size_t i = 0; i < n; ++i) {
+      // k0 * A[(i + 1) % n] + k1 * B[i]
+      C[i] = F.addf(F.mulf(k0, A[(i + 1) % n]), F.mulf(k1, B[i]));
+    }
 
-  FFT<Field>::fftb(&A[0], n, omega, omega_order, F);
-  FFT<Field>::fftb(&B[0], n, omega, omega_order, F);
-  FFT<Field>::fftb(&C[0], n, omega, omega_order, F);
-  Elt w = F.one();
-  EXPECT_EQ(w, reroot(omega_n, n, 1, F));
-  for (size_t i = 0; i < n; ++i) {
-    EXPECT_EQ(F.addf(F.mulf(k0, A[i]), F.mulf(F.mulf(k1, B[i]), w)),
-              F.mulf(w, C[i]));  // k0 * A[i] + k1 * B[i] * w =  C[i] * w
-    F.mul(w, omega_n);
+    FFT<Field>::fftb(&A[0], n, omega, omega_order, F);
+    FFT<Field>::fftb(&B[0], n, omega, omega_order, F);
+    FFT<Field>::fftb(&C[0], n, omega, omega_order, F);
+    Elt w = F.one();
+    EXPECT_EQ(w, reroot(omega_n, n, 1, F));
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_EQ(F.addf(F.mulf(k0, A[i]), F.mulf(F.mulf(k1, B[i]), w)),
+                F.mulf(w, C[i]));  // k0 * A[i] + k1 * B[i] * w =  C[i] * w
+      F.mul(w, omega_n);
+    }
   }
 }
 }  // namespace
@@ -175,9 +180,7 @@ void BM_FFT_Fp256_2(benchmark::State& state) {
     FFT<Field>::fftb(&A[0], N, OMEGA31, 1u << 31, F);
   }
 }
-BENCHMARK(BM_FFT_Fp256_2)
-    ->RangeMultiplier(4)
-    ->Range(1024, (1 << 22));
+BENCHMARK(BM_FFT_Fp256_2)->RangeMultiplier(4)->Range(1024, (1 << 22));
 
 void BM_FFT_Fp128(benchmark::State& state) {
   using Field = Fp128<>;
@@ -197,9 +200,7 @@ void BM_FFT_Fp128(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_FFT_Fp128)
-    ->RangeMultiplier(4)
-    ->Range(1024, (1 << 22));
+BENCHMARK(BM_FFT_Fp128)->RangeMultiplier(4)->Range(1024, (1 << 22));
 
 void BM_FFT_F64_2(benchmark::State& state) {
   using BaseField = Fp<1>;
@@ -225,9 +226,7 @@ void BM_FFT_F64_2(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_FFT_F64_2)
-    ->RangeMultiplier(4)
-    ->Range(1024, (1 << 22));
+BENCHMARK(BM_FFT_F64_2)->RangeMultiplier(4)->Range(1024, (1 << 22));
 
 void BM_FFT_F64(benchmark::State& state) {
   using Field = Fp<1>;
@@ -249,9 +248,7 @@ void BM_FFT_F64(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_FFT_F64)
-    ->RangeMultiplier(4)
-    ->Range(1024, (1 << 22));
+BENCHMARK(BM_FFT_F64)->RangeMultiplier(4)->Range(1024, (1 << 22));
 
 }  // namespace bench
 }  // namespace proofs

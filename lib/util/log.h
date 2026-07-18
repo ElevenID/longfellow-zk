@@ -27,7 +27,8 @@ enum LogLevel {
 
 void set_log_level(enum LogLevel l);
 
-void log(enum LogLevel l, const char* format, ...);
+void log(enum LogLevel l, const char* format, ...)
+    __attribute__((format(printf, 2, 3)));
 }  // namespace proofs
 
 #endif  // PRIVACY_PROOFS_ZK_LIB_UTIL_LOG_H_

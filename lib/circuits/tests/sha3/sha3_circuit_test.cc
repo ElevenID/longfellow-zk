@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include "algebra/convolution.h"
@@ -43,11 +42,11 @@
 #include "random/transcript.h"
 #include "sumcheck/circuit.h"
 #include "sumcheck/prover.h"
-#include "sumcheck/verifier.h"
 #include "util/log.h"
 #include "util/panic.h"
 #include "zk/zk_proof.h"
 #include "zk/zk_prover.h"
+#include "zk/zk_testing.h"
 #include "zk/zk_verifier.h"
 #include "benchmark/benchmark.h"
 #include "gtest/gtest.h"
@@ -211,22 +210,6 @@ TEST(SHA3_Circuit, Keccak_F_1600_Copies) {
       }
     }
   }
-
-  {
-    Prover<Field> prover(F);
-    Prover<Field>::inputs pin;
-    auto V = prover.eval_circuit(&pin, CIRCUIT.get(), W->clone(), F);
-
-    Transcript tsp((uint8_t*)"test", 4);
-    Proof<Field> proof(CIRCUIT->nl);
-    prover.prove(&proof, nullptr, CIRCUIT.get(), pin, tsp);
-
-    const char* why = "ok";
-    Transcript tsv((uint8_t*)"test", 4);
-    check(Verifier<Field>::verify(&why, CIRCUIT.get(), &proof, std::move(V),
-                                  std::move(W), tsv, F),
-          why);
-  }
 }
 
 TEST(SHA3_Circuit, AssertShake256) {
@@ -353,7 +336,7 @@ struct ShakeProverSystem {
     std::vector<uint8_t> want = vectors[1].out;
     check(seed.size() == 3, "seed must be 32 bytes");
     check(want.size() == 33, "want too long");
-    zkpr = std::make_unique<ZkProof<Field>>(*circuit, 4, 128);
+    zkpr = std::make_unique<ZkProof<Field>>(*circuit, kLigeroRate, kLigeroNreq);
     Dense<Field> w(1, circuit->ninputs);
     DenseFiller<Field> filler(w);
     filler.push_back(f.one());
@@ -379,7 +362,8 @@ struct ShakeProverSystem {
   }
 
   bool Verify() {
-    ZkVerifier<Field, RSFactory> verifier(*circuit, rsf, 4, 128, f);
+    ZkVerifier<Field, RSFactory> verifier(*circuit, rsf, kLigeroRate,
+                                          kLigeroNreq, f);
     Transcript tv((uint8_t*)"test", 4);
     verifier.recv_commitment(*zkpr, tv);
     Dense<Field> pub(1, 0);

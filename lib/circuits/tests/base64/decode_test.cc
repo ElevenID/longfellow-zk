@@ -55,7 +55,7 @@ void test_each_symbol(const Field& F) {
       bd.decode(in, out);
       bool failed = ebk.assertion_failed();
       if (!failed) {
-        log(INFO, "expected failure on %x", c);
+        log(INFO, "expected failure on %zx", c);
       }
       EXPECT_TRUE(failed);
     }

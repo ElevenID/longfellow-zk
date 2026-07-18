@@ -14,6 +14,8 @@
 
 #include "algebra/utility.h"
 
+#include <cstddef>
+
 #include "algebra/bogorng.h"
 #include "algebra/compare.h"
 #include "algebra/fp.h"

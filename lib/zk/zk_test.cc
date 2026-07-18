@@ -30,7 +30,8 @@
 #include "circuits/logic/compiler_backend.h"
 #include "circuits/logic/logic.h"
 #include "ec/p256.h"
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
+#include "proto/circuit_writer.h"
 #include "random/random.h"
 #include "random/transcript.h"
 #include "sumcheck/circuit.h"
@@ -272,7 +273,7 @@ TEST(ZK, Rfc_testvector1) {
 
   // Serialize the circuit.
   std::vector<uint8_t> bytes;
-  CircuitRep<Fp128> cr(Fg, FP128_ID);
+  CircuitWriter<Fp128> cr(Fg, FP128_ID);
   cr.to_bytes(*circuit, bytes);
   dump("circuit", bytes);
 

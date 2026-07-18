@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "algebra/hash.h"
@@ -194,9 +195,9 @@ class QuadCircuit {
       typename term::assert0_type_hack hack;
       std::vector<term> terms;
       terms.push_back(term(op, hack));
-      size_t n1 = push_node(node(terms));
-      nodes_[n1].info.is_assert0 = true;
-      return n1;
+      node nn(std::move(terms));
+      nn.info.is_assert0 = true;
+      return push_node(std::move(nn));
     }
   }
 
@@ -270,8 +271,10 @@ class QuadCircuit {
 
  private:
   void output_internal(size_t n, quad_corner_t wire_id) {
-    nodes_[n].info.is_output = true;
-    nodes_[n].info.desired_wire_id_for_output = wire_id;
+    node* nn = &nodes_[n];
+    proofs::check(!nn->info.is_output, "outputting the same node twice");
+    nn->info.is_output = true;
+    nn->info.desired_wire_id_for_output = wire_id;
     noutput_++;
   }
 
@@ -299,7 +302,7 @@ class QuadCircuit {
     }
 
     size_t nid = nodes_.size();
-    nodes_.push_back(n);
+    nodes_.push_back(std::move(n));
 
     // record NID into the common-subexpression elimination table
     cse_.insert(d, nid);
@@ -308,10 +311,11 @@ class QuadCircuit {
   }
 
   node materialize_input(size_t op) {
-    if (nodes_[op].info.is_input) {
+    node* nn = &nodes_[op];
+    if (nn->info.is_input) {
       return node(/*kstore(f.one())=*/1, 0, op);
     } else {
-      return /*a copy of*/ nodes_[op];
+      return nn->clone();
     }
   }
 
@@ -337,18 +341,17 @@ class QuadCircuit {
     std::vector<term> terms;
     size_t i0 = 0, i1 = 0;
     while (i0 < t0.size() && i1 < t1.size()) {
-      term t;
       if (t0[i0].eqndx(t1[i1])) {
-        t = t0[i0];
+        term t = t0[i0];
         t.ki = kstore(f_.addf(kload(t.ki), kload(t1[i1].ki)));
+        push_back_unless_zero(terms, t);
         i0++;
         i1++;
       } else if (t0[i0].ltndx(t1[i1])) {
-        t = t0[i0++];
+        push_back_unless_zero(terms, t0[i0++]);
       } else {
-        t = t1[i1++];
+        push_back_unless_zero(terms, t1[i1++]);
       }
-      push_back_unless_zero(terms, t);
     }
 
     while (i0 < t0.size()) {
@@ -359,7 +362,7 @@ class QuadCircuit {
       push_back_unless_zero(terms, t1[i1++]);
     }
 
-    return node(terms);
+    return node(std::move(terms));
   }
 
   // constants_[n] stores the n-th constant, once.

@@ -135,7 +135,8 @@ class mdoc_1f_witness {
       filler.push_back(pwcb_[i].encoded_sel_header);
     }
     filler.push_back(gwcb_.invprod_decode);
-    filler.push_back(gwcb_.cc0_counter.e);
+    filler.push_back(gwcb_.cc0_counter);
+    filler.push_back(gwcb_.neg_cc0_counter);
     filler.push_back(gwcb_.invprod_parse);
 
     fill_cbor_index(filler, pm_.valid_, prepad);

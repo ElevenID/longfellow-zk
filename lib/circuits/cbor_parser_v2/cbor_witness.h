@@ -42,6 +42,7 @@ class CborWitness {
     Elt encoded_sel;
     size_t slen_next;
     counters cc_next;
+    CElt neg_sum_counters;
     Elt invprod_decode;
     Elt invprod_parse;
   };
@@ -59,6 +60,7 @@ class CborWitness {
       for (size_t l = 0; l < kNCounters; ++l) {
         filler.push_back(f_.as_counter(pw[i].cc_next[l]));
       }
+      filler.push_back(pw[i].neg_sum_counters);
       if (i > 0) {
         filler.push_back(pw[i].invprod_decode);
         filler.push_back(pw[i].invprod_parse);
@@ -162,6 +164,13 @@ class CborWitness {
         pw[i].encoded_sel = unary_plucker_point<Field, kNCounters>()(isel, F);
         pw[i].invprod_decode = F.invertf(prod_decode);
         pw[i].invprod_parse = F.invertf(prod_parse);
+
+        // counters checksum
+        size_t sum_raw = slen_next;
+        for (size_t l = 0; l < kNCounters; ++l) {
+          sum_raw += cc_next[l];
+        }
+        pw[i].neg_sum_counters = F.negf(F.as_counter(sum_raw));
 
         slen = slen_next;
         cc = cc_next;

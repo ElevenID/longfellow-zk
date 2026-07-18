@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
 
 #include <array>
 #include <cstddef>
@@ -29,6 +29,8 @@
 #include "circuits/logic/logic.h"
 #include "circuits/sha/flatsha256_circuit.h"
 #include "ec/p256.h"
+#include "proto/circuit_reader.h"
+#include "proto/circuit_writer.h"
 #include "sumcheck/circuit.h"
 #include "util/log.h"
 #include "util/readbuffer.h"
@@ -52,12 +54,12 @@ void serialize_test2(const Circuit<FF>& circuit, const FF& F,
                      FieldID field_id) {
   std::vector<uint8_t> bytes;
   log(INFO, "Serializing2");
-  CircuitRep<FF> cr(F, field_id);
+  CircuitWriter<FF> cr(F, field_id);
   cr.to_bytes(circuit, bytes);
   size_t sz = bytes.size();
   log(INFO, "size: %zu", sz);
 
-  CircuitRep<FF> cr2(F, field_id);
+  CircuitReader<FF> cr2(F, field_id);
 
   log(INFO, "Deserializing2");
   ReadBuffer rb(bytes);
@@ -78,7 +80,7 @@ void serialize_test2(const Circuit<FF>& circuit, const FF& F,
   uint8_t tmp[32];
   // Test corrupted numconsts
   ReadBuffer rb3(bytes);
-  size_t clobber = CircuitRep<FF>::kBytesPerSizeT * 7 - 1;
+  size_t clobber = CircuitIO::kBytesPerSizeT * 7 - 1;
   tmp[0] = bytes[clobber];
   bytes[clobber] = 1;
   bad = cr2.from_bytes(rb3, /*enforce_circuit_id=*/true);
@@ -105,7 +107,7 @@ void serialize_test3(Circuit<FF>& circuit, const FF& F, FieldID field_id) {
 
   std::vector<uint8_t> bytes;
   log(INFO, "Serializing3");
-  CircuitRep<FF> cr(F, field_id);
+  CircuitWriter<FF> cr(F, field_id);
   cr.to_bytes(circuit, bytes);
   size_t sz = bytes.size();
   log(INFO, "size: %zu", sz);
@@ -113,7 +115,7 @@ void serialize_test3(Circuit<FF>& circuit, const FF& F, FieldID field_id) {
   // restore circuit id
   circuit.id[0] ^= 1u;
 
-  CircuitRep<FF> cr2(F, field_id);
+  CircuitReader<FF> cr2(F, field_id);
 
   log(INFO, "Deserializing3");
   ReadBuffer rb(bytes);
@@ -196,6 +198,109 @@ TEST(circuit_io, SHA) {
 
   serialize_test2<Fp128>(*circuit, Fg, FP128_ID);
   serialize_test3<Fp128>(*circuit, Fg, FP128_ID);
+}
+
+TEST(circuit_io, CoverageGaps) {
+  using Fp128 = Fp128<>;
+  const Fp128 Fg;
+  CircuitReader<Fp128> cr(Fg, FP128_ID);
+
+  std::vector<uint8_t> bytes;
+  bytes.push_back(1);  // version
+
+  auto write_num = [](std::vector<uint8_t>& b, size_t v) {
+    for (size_t i = 0; i < 3; ++i) {
+      b.push_back(static_cast<uint8_t>(v & 0xff));
+      v >>= 8;
+    }
+  };
+
+  write_num(bytes, FP128_ID);  // field_id
+  write_num(bytes, 1);         // nv
+  write_num(bytes, 1);         // nc
+  write_num(bytes, 0);         // npub_in
+  write_num(bytes, 0);         // subfield_boundary
+  write_num(bytes, 1);         // ninputs
+  write_num(bytes, 1);         // nl
+  write_num(bytes, 1);         // numconst
+
+  // Constants
+  for (size_t i = 0; i < Fp128::kBytes; ++i) bytes.push_back(0);
+
+  // Layer info
+  write_num(bytes, 0);  // lw
+  write_num(bytes, 1);  // nw
+  write_num(bytes, 1);  // nq
+
+  // Quad
+  write_num(bytes, 0);  // g
+  write_num(bytes, 0);  // hl
+  write_num(bytes, 0);  // hr
+  write_num(bytes, 0);  // vi
+
+  // Circuit ID
+  for (size_t i = 0; i < 32; ++i) bytes.push_back(0);
+
+  // 1. Short buffer (Line 123)
+  {
+    ReadBuffer rb(bytes.data(), 10);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 2. Truncated constants (Line 149)
+  {
+    std::vector<uint8_t> bad_bytes = bytes;
+    bad_bytes[22] = 0xff;
+    bad_bytes[23] = 0xff;
+    bad_bytes[24] = 0xff;
+    ReadBuffer rb(bad_bytes);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 3. Invalid constant (Line 157)
+  {
+    std::vector<uint8_t> bad_bytes = bytes;
+    for (size_t i = 0; i < 16; ++i) bad_bytes[25 + i] = 0xff;
+    ReadBuffer rb(bad_bytes);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 4. Truncated layer info (Line 184)
+  {
+    ReadBuffer rb(bytes.data(), 45);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 5. Invalid quad index g (Line 202)
+  {
+    std::vector<uint8_t> bad_bytes = bytes;
+    bad_bytes[50] = 4;
+    ReadBuffer rb(bad_bytes);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 6. Invalid hl or hr (Line 207)
+  {
+    std::vector<uint8_t> bad_bytes = bytes;
+    bad_bytes[53] = 4;
+    ReadBuffer rb(bad_bytes);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
+
+  // 7. Invalid vi (Line 211)
+  {
+    std::vector<uint8_t> bad_bytes = bytes;
+    bad_bytes[59] = 1;
+    ReadBuffer rb(bad_bytes);
+    auto c = cr.from_bytes(rb, false);
+    EXPECT_TRUE(c == nullptr);
+  }
 }
 
 }  // namespace

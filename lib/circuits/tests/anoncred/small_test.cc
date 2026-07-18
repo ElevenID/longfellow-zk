@@ -48,6 +48,9 @@ namespace {
 using Sw = SmallWitness<P256, Fp256Base, Fp256Scalar>;
 static constexpr size_t kNumAttr = 1;
 
+constexpr size_t kZKRate = 7;
+constexpr size_t kZKQueries = 132;  // 109+ bits of security
+
 // Helper functions to create circuit and fill the witness.
 std::unique_ptr<Circuit<Fp256Base>> make_circuit() {
   using CompilerBackend = CompilerBackend<Fp256Base>;
@@ -196,7 +199,7 @@ void BM_AnonCred(benchmark::State &state) {
   SecureRandomEngine rng;
 
   for (auto s : state) {
-    ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+    ZkProof<Fp256Base> zkpr(*CIRCUIT, kZKRate, kZKQueries);
     ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
     prover.commit(zkpr, W, tp, rng);
     prover.prove(zkpr, W, tp);

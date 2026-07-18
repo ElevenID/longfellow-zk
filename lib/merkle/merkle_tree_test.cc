@@ -129,6 +129,7 @@ TEST(MerkleTree, ZeroLengthProof) {
 }
 
 TEST(MerkleTree, UniqueLeaves) {
+#if GTEST_HAS_DEATH_TEST
   Digest leaves[4] = {Digest{100}, Digest{101}, Digest{102}, Digest{103}};
   MerkleTree mt(4);
   for (size_t i = 0; i < 4; i++) {
@@ -139,10 +140,10 @@ TEST(MerkleTree, UniqueLeaves) {
   std::vector<Digest> ll = {leaves[1], leaves[1]};
   MerkleTreeVerifier verifier(4, root);
   std::vector<Digest> proof = {Digest::hash2(leaves[1], leaves[1])};
-
   EXPECT_DEATH(
       verifier.verify_compressed_proof(proof.data(), 1, leaves, ids, 2),
       "duplicate position in merkle tree requested");
+#endif
 }
 
 TEST(MerkleTree, BatchVerifyProofTooShort) {
@@ -156,6 +157,22 @@ TEST(MerkleTree, BatchVerifyProofTooShort) {
 
   EXPECT_FALSE(verifier.verify_compressed_proof(&proof[0], len - 1, &leaves[0],
                                                 &idx[0], idx.size()));
+}
+
+TEST(MerkleTree, BatchVerifyProofTooLong) {
+  std::vector<size_t> idx;
+  std::vector<Digest> leaves;
+  MerkleTree prover = setupBatch(300, 20, leaves, idx);
+  Digest root = prover.build_tree();
+  std::vector<Digest> proof;
+  size_t len = prover.generate_compressed_proof(proof, &idx[0], 20);
+  MerkleTreeVerifier verifier(300, root);
+
+  // Append a dummy digest to the proof to avoid out-of-bounds reads.
+  proof.push_back(Digest{});
+
+  EXPECT_FALSE(verifier.verify_compressed_proof(
+      proof.data(), len + 1, leaves.data(), idx.data(), idx.size()));
 }
 
 void print_digest(const Digest& d) {

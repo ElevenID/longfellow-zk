@@ -65,6 +65,14 @@ class RFFT {
     check(ii == C.i(), "wrong sign for i(), need the conjugate root");
   }
 
+  // We hardcode w8.re == w8.im for 8th-roots of unity.
+  // This always holds if p mod 8 == 7, in which case the
+  // 8-th root is the usual +/- (1+i)/sqrt(2), assuming w8^2 = I
+  // (as opposed to -I).
+  static void validate_w8(const CElt& w8) {
+    check(w8.re == w8.im, "wrong 8-th root of unity");
+  }
+
   // ------------------------------------------------------------
   // Main algorithm starts here.
   //
@@ -282,7 +290,9 @@ class RFFT {
       CElt omega_n = Twiddle<FieldExt>::reroot(omega, omega_order, n, C);
       Twiddle<FieldExt> roots(n, omega_n, C);
       validate_I(roots.w_[n / 4], C);
-
+      if (n >= 8) {
+        validate_w8(roots.w_[n / 8]);
+      }
       Permutations<RElt>::bitrev(A, n);
 
       size_t m = n;
@@ -330,6 +340,9 @@ class RFFT {
       CElt omega_n = Twiddle<FieldExt>::reroot(omega, omega_order, n, C);
       Twiddle<FieldExt> roots(n, omega_n, C);
       validate_I(roots.w_[n / 4], C);
+      if (n >= 8) {
+        validate_w8(roots.w_[n / 8]);
+      }
 
       size_t m = n;
 

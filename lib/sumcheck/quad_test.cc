@@ -165,5 +165,10 @@ TEST(ApproximateDeltaTableBuilder, Basic) {
   EXPECT_LE(table->size(), 3);
 }
 
+TEST(ApproximateDeltaTableBuilder, ZeroCacheSize) {
+  EXPECT_DEATH(ApproximateDeltaTableBuilder<Field>(0),
+               "cache_size must be positive");
+}
+
 }  // namespace
 }  // namespace proofs

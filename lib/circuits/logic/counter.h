@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include <cstdint>
+#include <functional>
 
 // Embedding of small unsigned integers into an additive group of
 // unspecified size, but assumed to be able to encode 16 bits or so.
@@ -68,6 +69,17 @@ class CounterAux<Logic_, /*kCharacteristicTwo=*/false> {
 
   CEltW add(const CEltW& a, const CEltW& b) const {
     return CEltW{l_.add(a.e, b.e)};
+  }
+
+  CEltW add(size_t i0, size_t i1, const std::function<CEltW(size_t)>& f) const {
+    if (i1 <= i0) {
+      return as_counter(0);
+    } else if (i1 == i0 + 1) {
+      return f(i0);
+    } else {
+      size_t im = i0 + (i1 - i0) / 2;
+      return add(add(i0, im, f), add(im, i1, f));
+    }
   }
 
   // a ? b : 0
@@ -142,6 +154,17 @@ class CounterAux<Logic_, /*kCharacteristicTwo=*/true> {
 
   CEltW add(const CEltW& a, const CEltW& b) const {
     return CEltW{l_.mul(a.e, b.e)};
+  }
+
+  CEltW add(size_t i0, size_t i1, const std::function<CEltW(size_t)>& f) const {
+    if (i1 <= i0) {
+      return as_counter(0);
+    } else if (i1 == i0 + 1) {
+      return f(i0);
+    } else {
+      size_t im = i0 + (i1 - i0) / 2;
+      return add(add(i0, im, f), add(im, i1, f));
+    }
   }
 
   // a ? b : 0

@@ -20,21 +20,27 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "util/panic.h"
+
 namespace proofs {
 
 // ceil(a/b)
 template <class T>
 T ceildiv(T a, T b) {
-  return (a + (b - 1)) / b;
+  // Use a / b + (a % b != 0) to avoid overflow when a + b - 1 > max(T).
+  // This implementation is safe for positive a and b.
+  return (a / b) + (a % b != 0);
 }
 
+// ceil(log_2(n))
 inline size_t lg(size_t n) {
-  size_t lgk = 0, k = 1;
-  while (k < n) {
-    k *= 2;
-    lgk += 1;
+  check(n > 0, "n > 0");
+  size_t lgn = 0;
+  while (n > 1) {
+    n = (n / 2) + (n % 2);
+    lgn += 1;
   }
-  return lgk;
+  return lgn;
 }
 
 // Morton-order operations
@@ -76,7 +82,7 @@ inline uint64_t uneven(uint64_t x) {
 // (Y0, Y1), set (X0, X1) to the even/odd
 // representation of X+Y
 template <class T>
-static void add(T *x0, T *x1, T y0, T y1) {
+static void add(T* x0, T* x1, T y0, T y1) {
   // Given two arrays X[i] and Y[i] of bits, the goal
   // is to build an adder.  One way to build an adder
   // is to switch to the generate/propagate representation
@@ -136,7 +142,7 @@ static void add(T *x0, T *x1, T y0, T y1) {
 
 // a-b via ~(~a + b)
 template <class T>
-static void sub(T *x0, T *x1, T y0, T y1) {
+static void sub(T* x0, T* x1, T y0, T y1) {
   *x0 = ~*x0;
   *x1 = ~*x1;
   add(x0, x1, y0, y1);

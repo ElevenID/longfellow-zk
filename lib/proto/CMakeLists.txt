@@ -12,5 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-proofs_add_tests(circuit_test)
-target_link_libraries(circuit_test flatsha)
+proofs_add_tests(circuit_io_test)
+target_link_libraries(circuit_io_test flatsha)

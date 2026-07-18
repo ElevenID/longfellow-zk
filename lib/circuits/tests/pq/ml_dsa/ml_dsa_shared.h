@@ -12,67 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_44_TYPES_H_
-#define PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_44_TYPES_H_
+#ifndef PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_SHARED_H_
+#define PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_SHARED_H_
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
 #include "algebra/fp24.h"
+
 namespace proofs {
 namespace ml_dsa {
 
-// ----------------------------------------------------------------------------
-//
-// !!!!! DO NOT USE IN PRODUCTION !!!!!
-//
-// This ML-DSA circuit is an experimental implementation for research purposes.
-// It has not been fully vetted and is not recommended for production use cases
-// at this time.
-//
-// ML-DSA is specified in
-//
-//      FIPS 204
-//      Federal Information Processing Standards Publication
-//      Module-Lattice-Based Digital
-//      Signature Standard
-//
-//      https://nvlpubs.nist.gov/nistPubs/fips/nist.fips.204.pdf
-//
-// ----------------------------------------------------------------------------
+constexpr size_t bitlen(uint64_t val) {
+  return val == 0 ? 0 : 1 + bitlen(val >> 1);
+}
 
 // q: 2^23 - 2^13 + 1 = 8380417.
 static constexpr uint32_t Q = 8380417;
 using Elt = Fp24::Elt;
 static constexpr size_t N = 256;
-extern const Fp24 Fq;
+static constexpr uint64_t D = 13;
+const Fp24& Fq();
 
-// The ML-DSA 44 algorithm is specified in
-// https://nvlpubs.nist.gov/nistPubs/fips/nist.fips.204.pdf.
-// For "44", the parameters from Section 4, page 15 are:
-static constexpr uint64_t ZETA = 1753;       // a 512-th root of unity in F_q
-static constexpr uint64_t D = 13;            // number of bits dropped from t
-static constexpr uint64_t TAU = 39;          // number of ±1 in c
-static constexpr uint64_t GAMMA_1 = 131072;  // coefficient range of y: 2^17
-static constexpr uint64_t GAMMA_2 = 95232;   // low order rounding: (q-1)/88
-static constexpr uint64_t K = 4;             // Dimensions of A = k x l
-static constexpr uint64_t L = 4;             // Dimensions of A = k x l
-static constexpr uint64_t ETA = 2;           // Private key range
-static constexpr uint64_t BETA = 78;         // \tau * \eta
-static constexpr uint64_t OMEGA = 80;        // Max number of ones in hint
-static constexpr uint64_t C_TILDE_BYTES = 32;
-
-// Derived parameters
-static constexpr size_t PK_SIZE = 32 + 32 * K * 10;
-
-// Define ring R_q = R_q[x]/(x^256 + 1).
 using Rq = std::array<Elt, N>;
-using RqK = std::array<Rq, K>;
-using RqL = std::array<Rq, L>;
-using MatrixA = std::array<RqL, K>;
 
-static constexpr uint64_t kZetas[256] = {
+inline constexpr uint64_t kZetas[256] = {
     1u,       4808194u, 3765607u, 3761513u, 5178923u, 5496691u, 5234739u,
     5178987u, 7778734u, 3542485u, 2682288u, 2129892u, 3764867u, 7375178u,
     557458u,  7159240u, 5010068u, 4317364u, 2663378u, 6705802u, 4855975u,
@@ -112,7 +77,67 @@ static constexpr uint64_t kZetas[256] = {
     1900052u, 7598542u, 1054478u, 7648983u,
 };
 
+// ML-DSA parameter sets.
+// The ML-DSA algorithms are specified in FIPS 204:
+// https://nvlpubs.nist.gov/nistPubs/fips/nist.fips.204.pdf
+//
+// The parameter values below are sourced from Section 4, Table 1, page 15.
+template <size_t K_val, size_t L_val, size_t tau_val, size_t omega_val,
+          size_t c_tilde_bytes_val, uint64_t gamma_1_val, uint64_t gamma_2_val,
+          uint64_t beta_val, size_t z_bits_val, size_t r1_bits_val,
+          size_t w1_bytes_val>
+struct MLDsaParams {
+  static constexpr size_t K = K_val;          // Dimension of matrix A (rows)
+  static constexpr size_t L = L_val;          // Dimension of matrix A (columns)
+  static constexpr size_t tau = tau_val;      // Number of +/-1 in challenge c
+  static constexpr size_t omega = omega_val;  // Max number of ones in hint h
+  static constexpr size_t c_tilde_bytes =
+      c_tilde_bytes_val;  // Hash commitment size in bytes (2*lambda bits)
+  static constexpr uint64_t gamma_1 = gamma_1_val;  // Coefficient range of y
+  static constexpr uint64_t gamma_2 = gamma_2_val;  // Low-order rounding range
+  static constexpr uint64_t beta = beta_val;  // tau * eta (rejection bound)
+  static constexpr size_t z_bits =
+      z_bits_val;  // Bits to pack z coefficients (circuit representation)
+  static constexpr size_t r1_bits = r1_bits_val;  // Bits for w1 coefficient
+  static constexpr size_t w1_bytes =
+      w1_bytes_val;  // Bytes to encode one w1 polynomial
+
+  // Derived parameters
+  static constexpr size_t z_coeff_bits = bitlen(2 * gamma_1 - 1);
+  static constexpr size_t r0_bits =
+      (gamma_2 == 95232) ? 18 : 19;  // Bits for r0 remainder
+  static constexpr size_t M =
+      (Q - 1) / (2 * gamma_2);  // Congruence modulo M for UseHint (44 or 16)
+};
+
+// ML-DSA-44 parameters (FIPS 204 Section 4, Table 1)
+using MLDsa44Params =
+    MLDsaParams<4, 4, 39, 80, 32, 131072, 95232, 78, 19, 6, 192>;
+
+// ML-DSA-65 parameters (FIPS 204 Section 4, Table 1)
+using MLDsa65Params =
+    MLDsaParams<6, 5, 49, 55, 48, 524288, 261888, 196, 20, 4, 128>;
+
+template <typename Params>
+struct MLDsaTypes {
+  using RqK = std::array<Rq, Params::K>;
+  using RqL = std::array<Rq, Params::L>;
+  using MatrixA = std::array<RqL, Params::K>;
+
+  struct PublicKey {
+    MatrixA a_hat;
+    RqK t1;
+    std::array<uint8_t, 64> tr;
+  };
+
+  struct Signature {
+    std::array<uint8_t, Params::c_tilde_bytes> c_tilde;
+    RqL z;
+    std::array<std::array<bool, N>, Params::K> h;
+  };
+};
+
 }  // namespace ml_dsa
 }  // namespace proofs
 
-#endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_44_TYPES_H_
+#endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_PQ_ML_DSA_ML_DSA_SHARED_H_

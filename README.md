@@ -34,13 +34,18 @@ googlebenchmark.
 ### Ubuntu, debian
 
 ```
-$ sudo apt install -y clang cmake libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev
+$ sudo apt install -y build-essential clang cmake libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev
 ```
 
 ### Fedora, redhat
 
 ```
 $ yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel
+```
+
+Newer versions of fedora seem to require `libpfm-devel`:
+```
+$ yum install -y clang libzstd-devel openssl-devel git cmake google-benchmark-devel gtest-devel libpfm-devel
 ```
 
 

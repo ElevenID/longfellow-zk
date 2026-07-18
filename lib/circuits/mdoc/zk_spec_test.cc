@@ -79,7 +79,7 @@ void test_circuit_hash(size_t num_attributes) {
 
   char buf[kSHA256DigestSize * 2 + 1] = {};
   hex_to_str(buf, cid, kSHA256DigestSize);
-  log(INFO, "circuit hash %d attr:: %s", num_attributes, buf);
+  log(INFO, "circuit hash %zu attr:: %s", num_attributes, buf);
 
   bool found = false;
   for (size_t k = 0; k < kNumZkSpecs; ++k) {
@@ -153,7 +153,7 @@ TEST(ZkSpecTest, ProofCreationAndVerification) {
 
   for (size_t k = 0; k < kNumZkSpecs; ++k) {
     const ZkSpecStruct& zk_spec = kZkSpecs[k];
-    log(INFO, "Testing circuit hash %s, %d attributes", zk_spec.circuit_hash,
+    log(INFO, "Testing circuit hash %s, %zu attributes", zk_spec.circuit_hash,
         zk_spec.num_attributes);
     test_proof_creation_and_verification(zk_spec);
   }

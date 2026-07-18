@@ -177,11 +177,13 @@ TEST(Fp24, OfStringHex) {
 }
 
 TEST(Fp24, Unimplemented) {
+#if GTEST_HAS_DEATH_TEST
   Fp24 F(16777213);
   EXPECT_DEATH(F.prescale_for_dot(F.one()), "prescale_for_dot\\(\\)");
   EXPECT_DEATH(F.dot(0, nullptr, nullptr), "dot\\(\\)");
   Nat<2> n2(1);
   EXPECT_DEATH(F.reduce(n2), "reduce\\(\\)");
+#endif
 }
 
 void BM_Fp24_6_add(benchmark::State& state) {

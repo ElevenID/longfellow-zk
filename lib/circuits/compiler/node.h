@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "sumcheck/quad.h"
@@ -131,20 +132,31 @@ struct NodeF {
     }
   }
 
-  explicit NodeF(const std::vector<term>& terms) : terms(terms) {}
+  NodeF(const NodeF&) = delete;
+  NodeF& operator=(const NodeF&) = delete;
+  NodeF(NodeF&&) = default;
+  NodeF& operator=(NodeF&&) = default;
+
+  explicit NodeF(std::vector<term> terms) : terms(std::move(terms)) {}
+
+  NodeF clone() const {
+    proofs::check(!info.is_output, "cloning an output node");
+    NodeF cloned(terms);
+    cloned.info = info;
+    return cloned;
+  }
 
   bool zero() const { return !info.is_input && terms.empty(); }
   bool constant() const { return terms.size() == 1 && terms[0].constant(); }
   bool linearp() const { return terms.size() == 1 && terms[0].linearp(); }
 
   bool operator==(const NodeF& y) const {
+    // IS_OUTPUT does not count towards equality of wires.
+    // It is just an annotation for the compiler, like depth.
     if (info.is_input != y.info.is_input) return false;
+    if (info.is_assert0 != y.info.is_assert0) return false;
     if (info.desired_wire_id_for_input != y.info.desired_wire_id_for_input)
       return false;
-    if (info.is_output != y.info.is_output) return false;
-    if (info.desired_wire_id_for_output != y.info.desired_wire_id_for_output)
-      return false;
-    if (info.is_input != y.info.is_input) return false;
     if (terms.size() != y.terms.size()) return false;
     size_t l = terms.size();
     for (size_t i = 0; i < l; ++i) {
@@ -156,10 +168,8 @@ struct NodeF {
     uint64_t crc = 0x1;
     crc = crc64::update(crc,
                         static_cast<uint64_t>(info.desired_wire_id_for_input));
-    crc = crc64::update(crc,
-                        static_cast<uint64_t>(info.desired_wire_id_for_output));
     crc = crc64::update(crc, info.is_input);
-    crc = crc64::update(crc, info.is_output);
+    crc = crc64::update(crc, info.is_assert0);
     size_t l = terms.size();
     crc = crc64::update(crc, l);
     for (size_t i = 0; i < l; ++i) {

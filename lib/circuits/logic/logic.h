@@ -208,6 +208,7 @@ class Logic {
   // outside the circuit
   template <size_t N>
   EltW as_scalar(const bitvec<N>& v) const {
+    check(N <= 64, "N <= 64");
     EltW r = konst(zero());
     uint64_t s = 0;
     for (size_t i = 0; i < N; ++i) {
@@ -257,6 +258,7 @@ class Logic {
   }
 
   void bits(size_t n, BitW a[/*n*/], uint64_t x) const {
+    check(n <= 64, "n <= 64");
     for (size_t i = 0; i < n; ++i) {
       a[i] = bit((x >> i) & 1u);
     }

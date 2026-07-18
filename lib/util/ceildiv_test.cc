@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "gtest/gtest.h"
 
@@ -149,4 +150,34 @@ TEST(Morton, AddSub) {
 
 }  // namespace
 }  // namespace morton
+
+static size_t reference_lg(size_t n) {
+  size_t lgk = 0, k = 1;
+  while (k < n) {
+    k *= 2;
+    lgk += 1;
+  }
+  return lgk;
+}
+
+TEST(Ceildiv, LgMatchesReference) {
+  for (size_t n = 1; n < 1000; ++n) {
+    EXPECT_EQ(lg(n), reference_lg(n));
+  }
+}
+
+TEST(Ceildiv, DoesNotOverflow) {
+  uint32_t a = std::numeric_limits<uint32_t>::max() - 1;
+  uint32_t b = 3;
+  // If (a + (b - 1)) / b overflows, it will likely return a very small value or
+  // 0. The correct value should be around max / 3.
+  EXPECT_GT(ceildiv(a, b), (std::numeric_limits<uint32_t>::max() / 4));
+}
+
+TEST(Ceildiv, LgDoesNotOverflow) {
+  size_t n = std::numeric_limits<size_t>::max();
+  // lg(max) should be 8 * sizeof(size_t).
+  EXPECT_EQ(lg(n), sizeof(size_t) * 8);
+}
+
 }  // namespace proofs

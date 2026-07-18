@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-#include "circuits/tests/pq/ml_dsa/ml_dsa_44_types.h"
+#include "circuits/tests/pq/ml_dsa/ml_dsa_shared.h"
 #include "circuits/tests/sha3/sha3_reference.h"
 
 // ----------------------------------------------------------------------------
@@ -61,88 +61,83 @@ Rq subf(Rq a, const Rq& b);
 Rq scalef(Rq a, const Elt& s);
 
 // Inplace versions of
-// Algorithm 41 NTT(𝑤)
-// Algorithm 42 NTT−1(𝑤)̂
+// Algorithm 41 NTT(omega)
+// Algorithm 42 NTT−1(omega)̂
 void Ntt(Rq& a);
 void InvNtt(Rq& a);
 
-// Algorithm 30 RejNTTPoly(𝜌)
+// Algorithm 30 RejNTTPoly(rho)
 // Samples a polynomial in T_q.
 Rq RejNTTPoly(const std::vector<uint8_t>& rho, size_t num_blocks);
 
 // Algorithm 29 SampleInBall(rho)
 // Samples a polynomial c in R with coefficients from {-1, 0, 1} and Hamming
 // weight tau.
-Rq SampleInBall(const std::array<uint8_t, 32>& rho);
+template <typename Params>
+Rq SampleInBall(const std::array<uint8_t, Params::c_tilde_bytes>& rho);
 
 // Algorithm 32 ExpandA(rho)
 // Samples a K x L matrix A_hat of elements of T_q.
 // Input: A seed rho (32 bytes).
 // Output: Matrix A_hat in (T_q)^(K x L).
-MatrixA ExpandA(const std::vector<uint8_t>& rho);
+template <typename Params>
+typename MLDsaTypes<Params>::MatrixA ExpandA(const std::vector<uint8_t>& rho);
 
 // Algorithm 36 Decompose(r)
 // Decomposes r into (r1, r0) such that r = r1*(2*gamma2) + r0 mod q
+template <typename Params>
 std::pair<int32_t, int32_t> Decompose(int32_t r);
 
 // Algorithm 40 UseHint(h, r)
 // Returns the high bits of r adjusted according to hint h.
 // Input: Boolean h, r in Z_q.
 // Output: r1 in Z with 0 <= r1 <= (q-1)/(2*gamma2).
+template <typename Params>
 uint32_t UseHint(bool h, int32_t r);
 
 // Algorithm 19 BitUnpack(v, a, b)
-// Reverses the procedure BitPack. For ML-DSA-44, used for unpacking z with b =
+// Reverses the procedure BitPack. For ML-DSA, used for unpacking z with b =
 // gamma1
 std::optional<Rq> BitUnpack(const std::vector<uint8_t>& v, uint32_t a,
                             uint32_t b);
 
 // Algorithm 21 HintBitUnpack(y)
 // Reverses the procedure HintBitPack.
-std::optional<std::array<std::array<bool, N>, K>> HintBitUnpack(
+template <typename Params>
+std::optional<std::array<std::array<bool, N>, Params::K>> HintBitUnpack(
     const std::vector<uint8_t>& y);
-
-// Struct to hold expanded ML-DSA-44 public key elements
-struct PublicKey {
-  MatrixA a_hat;
-  std::array<Rq, K> t1;
-  std::array<uint8_t, 64> tr;
-};
-
-// Struct to hold ML-DSA-44 signature elements
-struct Signature {
-  std::array<uint8_t, 32> c_tilde;
-  std::array<Rq, L> z;
-  std::array<std::array<bool, N>, K> h;
-};
 
 // Algorithm 27 sigDecode(sigma)
 // Reverses the procedure sigEncode.
-std::optional<Signature> sigDecode(const std::vector<uint8_t>& sigma);
+template <typename Params>
+std::optional<typename MLDsaTypes<Params>::Signature> sigDecode(
+    const std::vector<uint8_t>& sigma);
 
 // Algorithm 18 SimpleBitUnpack(v, b)
-// Extracts coefficients from a byte array. For ML-DSA-44 b = 1023 (10 bits).
+// Extracts coefficients from a byte array.
 Rq SimpleBitUnpack(const std::vector<uint8_t>& v, uint32_t b);
 
 // Algorithm 23 pkDecode(pk)
 // Reverses the procedure pkEncode, expanding rho to a_hat and unpacking t1.
-PublicKey pkDecode(const std::vector<uint8_t>& pk);
+template <typename Params>
+typename MLDsaTypes<Params>::PublicKey pkDecode(const std::vector<uint8_t>& pk);
 
 // Algorithm 18 SimpleBitPack(w, b)
-// Packs coefficients into a byte array. For ML-DSA-44 w1Encode, b = 43 (6
-// bits).
+// Packs coefficients into a byte array.
 std::vector<uint8_t> SimpleBitPack(const Rq& w, uint32_t b);
 
 // Algorithm 28 w1Encode(w1)
 // Encodes a polynomial vector w1 into a byte string.
 // Input: w1 in R_q^k with coefficients in [0, (q-1)/(2*gamma2) - 1].
 // Output: A byte string representation w1_tilde.
-std::array<uint8_t, K * 192> w1Encode(const std::array<Rq, K>& w1);
+template <typename Params>
+std::array<uint8_t, Params::K * Params::w1_bytes> w1Encode(
+    const typename MLDsaTypes<Params>::RqK& w1);
 
 // Preprocesses the message by binding the context to it:
 // M' = 0x00 || |ctx| || ctx || msg
-std::vector<uint8_t> preprocess_message(const std::vector<uint8_t>& msg,
-                                        const std::vector<uint8_t>& ctx);
+std::optional<std::vector<uint8_t>> preprocess_message(
+    const std::vector<uint8_t>& msg, const std::vector<uint8_t>& ctx);
 
 }  // namespace ml_dsa
 }  // namespace proofs

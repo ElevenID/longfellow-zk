@@ -87,6 +87,9 @@ const ZkSpecStruct kZkSpecs[kNumZkSpecs] = {
 
 const ZkSpecStruct* find_zk_spec(const char* system_name,
                                  const char* circuit_hash) {
+  if (system_name == nullptr || circuit_hash == nullptr) {
+    return nullptr;
+  }
   for (size_t i = 0; i < kNumZkSpecs; ++i) {
     const ZkSpecStruct& zk_spec = kZkSpecs[i];
     if (strcmp(zk_spec.system, system_name) == 0 &&

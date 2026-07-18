@@ -72,6 +72,8 @@ class Limb {
     }
   }
 
+  // The standard equality operator is not constant-time.
+  // constant_time_eq() below implements a constant-time variant.
   bool operator==(const T& other) const {
     for (size_t i = 0; i < kLimbs; ++i) {
       if (limb_[i] != other.limb_[i]) {
@@ -81,6 +83,14 @@ class Limb {
     return true;
   }
   bool operator!=(const T& other) const { return !(operator==(other)); }
+
+  bool constant_time_eq(const T& y) const {
+    limb_t diff = 0;
+    for (size_t i = 0; i < kLimbs; ++i) {
+      diff |= (limb_[i] ^ y.limb_[i]);
+    }
+    return diff == 0;
+  }
 
   // Shift right by z.  Return the bits that fall off
   // the edge.

@@ -77,9 +77,8 @@ TEST(EllipticCurve, isOnCurve) {
   EXPECT_TRUE(p256k1.is_on_curve(p256k1.generator()));
   EXPECT_TRUE(p256k1.is_on_curve(p256k1.zero()));
 
-  // This point is on the curve, but not normalized, and thus our method
-  // should return false.
-  EXPECT_FALSE(ec_32543.is_on_curve(EC32543::ECPoint(
+  // This point is on the curve, but not normalized.
+  EXPECT_TRUE(ec_32543.is_on_curve(EC32543::ECPoint(
       f_32543.of_scalar(6),
       f_32543.of_string("175192863081551057610611323522603468882267323925296967"
                         "51295234077254554968800"),

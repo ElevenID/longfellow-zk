@@ -40,9 +40,11 @@ void expect_vequal(const Logic& L, const Logic::bitvec<N>& a,
 }
 
 TEST(Logic, Assert0) {
+#if GTEST_HAS_DEATH_TEST
   const EvaluationBackend ebk(F);
   const Logic L(&ebk, F);
   EXPECT_DEATH(L.assert0(L.konst(1)), "a != F.zero()");
+#endif
 }
 
 TEST(Logic, Simple) {

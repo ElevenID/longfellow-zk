@@ -68,7 +68,26 @@ class HQuad {
   HQuad& operator=(const HQuad& y) = delete;
   HQuad& operator=(HQuad&& y) = delete;
 
+  // We explicitly compile two specialized versions of bind_h, one for
+  // each hand, to avoid the silly index computation based on hand.
   void bind_h(const Elt& r, size_t hand, const Field& F) {
+    if (hand == 0) {
+      bind_h<0>(r, F);
+    } else {
+      bind_h<1>(r, F);
+    }
+  }
+
+  Elt scalar() const {
+    check(n_ == 1, "n_ == 1");
+    check(hc_[0].h[0] == quad_corner_t(0), "hc_[0].h[0] == 0");
+    check(hc_[0].h[1] == quad_corner_t(0), "hc_[0].h[1] == 0");
+    return vc_[0].v;
+  }
+
+ private:
+  template <size_t hand>
+  void bind_h(const Elt& r, const Field& F) {
     index_t rd = 0, wr = 0;
     while (rd < n_) {
       hcorner hcc;
@@ -101,13 +120,6 @@ class HQuad {
 
     // shrink the array
     n_ = wr;
-  }
-
-  Elt scalar() const {
-    check(n_ == 1, "n_ == 1");
-    check(hc_[0].h[0] == quad_corner_t(0), "hc_[0].h[0] == 0");
-    check(hc_[0].h[1] == quad_corner_t(0), "hc_[0].h[1] == 0");
-    return vc_[0].v;
   }
 };
 }  // namespace proofs

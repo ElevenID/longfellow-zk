@@ -25,7 +25,8 @@
 #include "circuits/mdoc/mdoc_zk.h"
 #include "ec/p256.h"
 #include "gf2k/gf2_128.h"
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
+#include "proto/circuit_reader.h"
 #include "sumcheck/circuit_id.h"
 #include "util/crypto.h"
 #include "util/log.h"
@@ -51,7 +52,7 @@ int circuit_id(uint8_t id[/*kSHA256DigestSize*/], const uint8_t* bcp,
   size_t full_size = decompress(bytes, bcp, bcsz);
 
   ReadBuffer rb_circuit(bytes.data(), full_size);
-  CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
+  CircuitReader<Fp256Base> cr_s(p256_base, P256_ID);
   auto c_sig = cr_s.from_bytes(rb_circuit, /*enforce_circuit_id=*/true);
   if (c_sig == nullptr) {
     log(ERROR, "signature circuit could not be parsed");
@@ -61,7 +62,7 @@ int circuit_id(uint8_t id[/*kSHA256DigestSize*/], const uint8_t* bcp,
   sha.Update(cid, kSHA256DigestSize);
 
   const f_128 Fs;
-  CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
+  CircuitReader<f_128> cr_h(Fs, GF2_128_ID);
   auto c_hash = cr_h.from_bytes(rb_circuit, /*enforce_circuit_id=*/true);
   if (c_hash == nullptr) {
     log(ERROR, "circuit could not be parsed");

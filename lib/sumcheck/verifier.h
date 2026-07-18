@@ -37,33 +37,46 @@ class Verifier : public VerifierLayers<Field> {
 
  public:
   static bool verify(const char** why, const Circuit<Field>* circ,
-                      const Proof<Field>* proof,
-                      std::unique_ptr<Dense<Field>> V,
-                      std::unique_ptr<Dense<Field>> X, Transcript& ts,
-                      const Field& F) {
-    if (why == nullptr || circ == nullptr || proof == nullptr ||
-        V == nullptr || X == nullptr) {
+                     const Proof<Field>* proof, std::unique_ptr<Dense<Field>> W,
+                     Transcript& ts, const Field& F) {
+    if (why == nullptr || circ == nullptr || proof == nullptr || W == nullptr) {
+      return false;
+    }
+
+    if (circ->nl > Circuit<Field>::kMaxLayers) {
+      *why = "too many layers";
+      return false;
+    }
+    if (circ->nc > Circuit<Field>::kMaxCopies) {
+      *why = "too many copies";
+      return false;
+    }
+    if (circ->nv > Circuit<Field>::kMaxOutputs) {
+      *why = "too many outputs";
+      return false;
+    }
+    if (circ->nl != circ->l.size() || circ->nl != proof->l.size()) {
+      *why = "circuit and proof layer counts must match";
       return false;
     }
 
     claims cl{};
     Challenge<Field> ch(circ->nl);
     TranscriptSumcheck<Field> tss(ts, F);
-    tss.write_input(X.get());
+    tss.write_input(W.get());
 
-    if (!(super::circuit(why, &cl, circ, proof, &ch, std::move(V), tss,
-                         F))) {
+    if (!(super::circuit(why, &cl, circ, proof, &ch, tss, F))) {
       return false;
     }
 
     // Final check on W, the input wires.
     // bind the copy variables:
-    X->bind_all(circ->logc, cl.q, F);
-    X->reshape(cl.nv);
+    W->bind_all(circ->logc, cl.q, F);
+    W->reshape(cl.nv);
 
     // bind the gate variables, for two hands:
-    auto X1 = X->clone();
-    Dense<Field>* VH[2] = {X.get(), X1.get()};
+    auto W1 = W->clone();
+    Dense<Field>* VH[2] = {W.get(), W1.get()};
 
     for (size_t hand = 0; hand < 2; ++hand) {
       VH[hand]->bind_all(cl.logv, cl.g[hand], F);
