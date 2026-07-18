@@ -10,11 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       
@@ -24,7 +23,10 @@ jobs:
           git config user.email "actions@github.com"
       
       - name: Add upstream remote
-        run: git remote add upstream https://github.com/google/longfellow-zk.git || true
+        run: |
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream https://github.com/google/longfellow-zk.git
+          fi
       
       - name: Fetch upstream
         run: git fetch upstream
@@ -35,15 +37,28 @@ jobs:
           BEHIND=$(git rev-list --count HEAD..upstream/main)
           echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
       
-      - name: Create sync PR
+      - name: Prepare sync branch
         if: steps.check.outputs.behind > 0
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="sync-upstream-$(date +%Y%m%d)"
-          git checkout -b "$BRANCH"
-          git merge upstream/main --no-edit || git merge --abort
-          git push origin "$BRANCH"
-          gh pr create --title "Sync with upstream google/longfellow-zk" \
-            --body "Automated sync from upstream. ${{ steps.check.outputs.behind }} commits behind." \
-            --base main --head "$BRANCH"
+          BRANCH="automation/sync-upstream"
+          git checkout -B "$BRANCH"
+          if ! git merge upstream/main --no-edit; then
+            git merge --abort
+            echo "Upstream merge requires manual conflict resolution."
+            exit 1
+          fi
+
+          # Retain the fork's reviewed, SHA-pinned workflows. The repository
+          # token intentionally has no authority to replace workflow files.
+          git restore --source=origin/main --staged --worktree -- .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit --amend --no-edit
+          fi
+
+          git push --force-with-lease origin "$BRANCH"
+          {
+            echo "## Upstream sync branch prepared"
+            echo
+            echo "Updated \`$BRANCH\` with ${{ steps.check.outputs.behind }} upstream commits."
+            echo "Open a reviewed pull request from that branch; ElevenID workflow files were retained intentionally."
+          } >> "$GITHUB_STEP_SUMMARY"
