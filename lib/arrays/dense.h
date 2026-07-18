@@ -49,14 +49,6 @@ class Dense {
   // make0 replacement
   explicit Dense(const Field& F) : n0_(1), n1_(1), v_(1) { v_[0] = F.zero(); }
 
-  // initialize dense array from P[i1*ldp+i0]
-  explicit Dense(corner_t n0, corner_t n1, const Elt p[], size_t ldp)
-      : n0_(n0), n1_(n1), v_(n0 * n1) {
-    for (corner_t i1 = 0; i1 < n1; ++i1) {
-      Blas<Field>::copy(n0, v_[i1 * n0], 1, &p[i1 * ldp], 1);
-    }
-  }
-
   Dense(const Dense& y) = delete;
   Dense(const Dense&& y) = delete;
   Dense operator=(const Dense& y) = delete;
@@ -118,18 +110,6 @@ class Dense {
         F.mul(v_[ndx++], x_last);
       }
     }
-  }
-
-  Elt at_corners(corner_t p0, corner_t p1, const Field& F) const {
-    if (p0 < n0_) {
-      return v_[p1 * n0_ + p0];
-    } else {
-      return F.zero();
-    }
-  }
-
-  T2 t2_at_corners(corner_t p0, corner_t p1, const Field& F) const {
-    return T2{at_corners(p0, p1, F), at_corners(p0 + 1, p1, F)};
   }
 
   // The precondition for reshaping is that the first dimension must be

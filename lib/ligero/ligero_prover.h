@@ -97,8 +97,8 @@ class LigeroProver {
       std::vector<Elt> u_ldt(p_.nwqrow);
 
       // V -> P
-      LigeroTranscript<Field>::gen_uldt(&u_ldt[0], p_, ts, F);
-      low_degree_proof(&proof.y_ldt[0], &u_ldt[0], F);
+      LigeroTranscript<Field>::gen_uldt(u_ldt.data(), p_, ts, F);
+      low_degree_proof(proof.y_ldt.data(), u_ldt.data(), F);
     }
 
     {
@@ -107,21 +107,23 @@ class LigeroProver {
       std::vector<Elt> A(p_.nwqrow * p_.w);
 
       // V -> P
-      LigeroTranscript<Field>::gen_alphal(nl, &alphal[0], ts, F);
-      LigeroTranscript<Field>::gen_alphaq(&alphaq[0], p_, ts, F);
+      LigeroTranscript<Field>::gen_alphal(nl, alphal.data(), ts, F);
+      LigeroTranscript<Field>::gen_alphaq(alphaq.data(), p_, ts, F);
 
-      LigeroCommon<Field>::inner_product_vector(&A[0], p_, nl, nllterm, llterm,
-                                                &alphal[0], lqc, &alphaq[0], F);
+      LigeroCommon<Field>::inner_product_vector(A.data(), p_, nl, nllterm,
+                                                llterm, alphal.data(), lqc,
+                                                alphaq.data(), F);
 
-      dot_proof(&proof.y_dot[0], &A[0], interpolator, F);
+      dot_proof(proof.y_dot.data(), A.data(), interpolator, F);
     }
 
     {
       std::vector<Elt> u_quad(p_.nqtriples);
 
       // V -> P
-      LigeroTranscript<Field>::gen_uquad(&u_quad[0], p_, ts, F);
-      quadratic_proof(&proof.y_quad_0[0], &proof.y_quad_2[0], &u_quad[0], F);
+      LigeroTranscript<Field>::gen_uquad(u_quad.data(), p_, ts, F);
+      quadratic_proof(proof.y_quad_0.data(), proof.y_quad_2.data(),
+                      u_quad.data(), F);
     }
 
     {
@@ -135,11 +137,11 @@ class LigeroProver {
     {
       std::vector<size_t> idx(p_.nreq);
       // V -> P
-      LigeroTranscript<Field>::gen_idx(&idx[0], p_, ts, F);
+      LigeroTranscript<Field>::gen_idx(idx.data(), p_, ts, F);
 
-      compute_req(proof, &idx[0]);
+      compute_req(proof, idx.data());
 
-      mc_.open(proof.merkle, &idx[0], p_.nreq);
+      mc_.open(proof.merkle, idx.data(), p_.nreq);
     }
   }
 
@@ -252,6 +254,9 @@ class LigeroProver {
 
       for (size_t j = 0; j < p_.w && j + i * p_.w < p_.nq; ++j) {
         const auto *l = &lqc[j + i * p_.w];
+        check(l->x < p_.nw, "l->x < p_.nw");
+        check(l->y < p_.nw, "l->y < p_.nw");
+        check(l->z < p_.nw, "l->z < p_.nw");
         check(W[l->z] == F.mulf(W[l->x], W[l->y]),
               "invalid quadratic constraints");
         tableau_at(iqx + i, j + p_.r) = W[l->x];

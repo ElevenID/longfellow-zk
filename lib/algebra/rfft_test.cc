@@ -20,9 +20,11 @@
 #include <cstdint>
 #include <vector>
 
+#include "algebra/bogorng.h"
 #include "algebra/fft.h"
 #include "algebra/fp2.h"
 #include "algebra/fp_p256.h"
+#include "benchmark/benchmark.h"
 #include "gtest/gtest.h"
 
 namespace proofs {
@@ -97,6 +99,36 @@ TEST(RFFTTest, Simple) {
     F_ext.mul(omega, omega0);
   }
 }
+
+// ================= Benchmarks
+
+void BM_RFFT_Fp256_2(benchmark::State& state) {
+  using BaseField = Fp256<>;
+  using BaseElt = BaseField::Elt;
+  using ExtField = Fp2<BaseField>;
+  using ExtElt = ExtField::Elt;
+
+  const BaseField F0;        // base field
+  const ExtField F_ext(F0);  // p^2 field extension
+
+  const ExtElt omega = F_ext.of_string(
+      "112649224146410281873500457609690258373018840430489408729223714171582664"
+      "680802",
+      "840879943585409076957404614278186605601821689971823787493130182544504602"
+      "12908");
+  uint64_t omega_order = 1ull << 31;
+
+  Bogorng<BaseField> rng(&F0);
+  size_t N = state.range(0);
+  std::vector<BaseElt> A(N);
+  for (size_t i = 0; i < N; ++i) {
+    A[i] = rng.next();
+  }
+  for (auto _ : state) {
+    RFFT<ExtField>::r2hc(&A[0], N, omega, omega_order, F_ext);
+  }
+}
+BENCHMARK(BM_RFFT_Fp256_2)->RangeMultiplier(4)->Range(1024, (1 << 22));
 
 }  // namespace
 }  // namespace proofs

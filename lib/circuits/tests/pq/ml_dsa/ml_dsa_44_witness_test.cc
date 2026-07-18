@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "circuits/tests/pq/ml_dsa/ml_dsa_44_types.h"
+#include "circuits/tests/pq/ml_dsa/ml_dsa_shared.h"
 #include "gtest/gtest.h"
 
 namespace proofs {

@@ -1,4 +1,4 @@
-# Ligero ZK Proof
+# Ligero ZK Proof {#ligero-zk-proof}
 This section specifies the construction and verification method for a Ligero commitment and zero-knowledge argument. The Ligero system as described by Ames, Hazay, Ishai, and Venkitasubramaniam [@ligero], consists of a commitment scheme, and a method for proving linear and quadratic constraints on the committed values in zero-knowledge. The later interface is sufficient to prove arbitrary circuits, but in the Longfellow scheme, it suffices to describe how to use such constraints to directly verify an IP transcript.
 
 <reference anchor='ligero' target='https://eprint.iacr.org/2022/1608'>
@@ -25,18 +25,19 @@ A tree that contains `n` leaves is represented by an array of `2 * n` message di
 
 ```
 class MerkleTree:
-    def __init__(self, n):
+    def __init__(self, n: int) -> None:
         self.n = n
         self.a = [b''] * (2 * n)
 
-    def set_leaf(self, pos, leaf):
+    def set_leaf(self, pos: int, leaf: bytes) -> None:
         assert 0 <= pos < self.n, f"{pos} is out of bounds"
         self.a[pos + self.n] = leaf
 
-    def build_tree(self):
+    def build_tree(self) -> bytes:
         for i in range(self.n - 1, 0, -1):
             left = self.a[2 * i]
-            right = self.a[2 * i + 1]s
+            right = self.a[2 * i + 1]
+
             self.a[i] = hash(left + right)
 
         return self.a[1]
@@ -50,7 +51,10 @@ To address these inefficiencies, this section explains how to produce a batch pr
 It is important in this formulation to treat the input digests as a sequence, i.e. with a given order. Both the prover and verifier of this batch proof must use the same order of the `requested_leaves` array.
 
 ```
-    def mark_tree(self, requested_leaves):
+    def mark_tree(
+            self,
+            requested_leaves: list[int],
+            ) -> list[bool]:
         marked = [False] * (2 * self.n)
 
         for i in requested_leaves:
@@ -62,19 +66,24 @@ It is important in this formulation to treat the input digests as a sequence, i.
 
         return marked
 
-    def compressed_proof(self, requested_leaves):
+    def compressed_proof(
+            self,
+            requested_leaves: list[int],
+            ) -> list[bytes]:
         proof = []
         marked = self.mark_tree(requested_leaves)
         for i in range(self.n - 1, 0, -1):
             if marked[i]:
                 child = 2 * i
 
-                # If the left child is marked, we need the right child.
+                # If the left child is marked, we need the right
+                # child (sibling).
                 if marked[child]:
                     child += 1
 
                 # If the identified child/sibling is NOT marked,
-                # add its hash to the proof so the verifier can calculate the parent.
+                # we must provide its hash in the proof so the
+                # verifier can calculate the parent.
                 if not marked[child]:
                     proof.append(self.a[child])
 
@@ -85,8 +94,15 @@ It is important in this formulation to treat the input digests as a sequence, i.
 This section describes how to verify a compressed Merkle proof. The claim to verify is that "the commitment `root` defines an `n`-leaf Merkle tree that contains `k` digests `s[0], ..., s[k-1]` at corresponding indices `i[0], ..., i[k-1]`."  The strategy of this verification procedure is to deduce which nodes are needed along the `k` verification paths from index to root, then read these values from the purported proof, and then recompute the Merkle tree and the consistency of the `root` digest. As an optimization, the `defined[]` array avoids recomputing internal portions of the Merkle tree that are not relevant to the verification. By convention, a proof for the degenerate case of `k=0` digests is defined to fail. It is assumed that the `indices[]` array does not contain duplicates.
 
 ```
-    def verify_merkle(self, root, n, k, s, indices, proof):
-        tmp = [None] * (2 * n)
+    def verify_merkle(
+            self,
+            root: bytes,
+            n: int,
+            k: int,
+            s: list[bytes],
+            indices: list[int],
+            proof: list[bytes]) -> bool:
+        tmp: list[None | bytes] = [None] * (2 * n)
         defined = [False] * (2 * n)
 
         proof_index = 0
@@ -117,6 +133,8 @@ This section describes how to verify a compressed Merkle proof. The claim to ver
             if defined[2 * i] and defined[2 * i + 1]:
                 left = tmp[2 * i]
                 right = tmp[2 * i + 1]
+                assert left is not None
+                assert right is not None
                 tmp[i] = hash(left + right)
                 defined[i] = True
 
@@ -177,7 +195,8 @@ This tableau matrix is constructed row-by-row by applying the extend procedure t
     by selecting BLOCK random field elements and applying extend.
 1)  The second IDOT row is defined as
 
-        Z = RANDOM[DBLOCK] such that sum_{i = NREQ ... NREQ + WR - 1} Z_i = 0
+        Z = RANDOM[DBLOCK] such that
+            sum_{i = NREQ ... NREQ + WR - 1} Z_i = 0
         extend(Z, DBLOCK, NCOL)
 
     by first selecting DBLOCK random field elements such that the subarray
@@ -342,7 +361,10 @@ def prove(transcript, context, linear[], lqc[])  {
     transcript.write(dot);
     transcript.write(qpr);
 
-    challenge_indicies = transcript.generate_nats_wo_replacement(NCOL - DBLOCK, NREQ);
+    challenge_indicies = transcript.generate_nats_wo_replacement(
+        NCOL - DBLOCK,
+        NREQ,
+    );
 
     columns = requested_columns(challenge_indicies, DBLOCK);
 

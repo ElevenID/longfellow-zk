@@ -88,6 +88,12 @@ class GF2_128 {
     N1 unpack() const { return N1(uint64x2_of_gf2_128(n)); }
   };
 
+  struct Accum {
+    gf2_128_accum_t acc;
+  };
+
+  Elt reduce(const Accum& a) const { return Elt{gf2_128_accum_reduce(a.acc)}; }
+
   explicit GF2_128() {
     kone_ = of_scalar_field(0b1);
     kx_ = of_scalar_field(0b10);
@@ -235,6 +241,9 @@ class GF2_128 {
   void mul(Elt& a, const Elt& y) const { a = mulf(a, y); }
   void neg(Elt& a) const { /* noop */ }
   void invert(Elt& a) const { a = invertf(a); }
+  void mac(Accum& a, const Elt& x, const Elt& y) const {
+    gf2_128_mac(a.acc, x.n, y.n);
+  }
 
   Elt zero() const { return Elt{}; }
   Elt one() const { return kone_; }
@@ -320,6 +329,7 @@ class GF2_128 {
     }
     return CElt{r};
   }
+  CElt negf(const CElt& a) const { return CElt{invertf(a.e)}; }
   Elt counter_beta(size_t i) const {
     check(i < kSubFieldBits, "i < kSubFieldBits");
     return counter_beta_[i];

@@ -129,7 +129,9 @@ class ApproximateDeltaTableBuilder {
 
  public:
   explicit ApproximateDeltaTableBuilder(size_t cache_size)
-      : delta_table_(std::make_shared<delta_table_t>()), cache_(cache_size) {}
+      : delta_table_(std::make_shared<delta_table_t>()), cache_(cache_size) {
+    check(cache_size > 0, "cache_size must be positive");
+  }
 
   uint32_t dedup(quad_corner_t dg, quad_corner_t dh0, quad_corner_t dh1,
                  uint32_t vi) {

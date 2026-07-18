@@ -23,6 +23,7 @@
 
 #include "algebra/compare.h"
 #include "util/ceildiv.h"
+#include "util/panic.h"
 #define DEFINE_STRONG_INT_TYPE(a, b) using a = b
 
 // ------------------------------------------------------------
@@ -67,7 +68,7 @@ class EQuad {
   index_t n_;
   std::vector<ecorner> ec_;
 
-  explicit EQuad(index_t n) : n_(n), ec_(n) {}
+  explicit EQuad(index_t n) : n_(n), ec_(n) { check(n > 0, "EQuad n > 0"); }
 
   // no copies
   EQuad(const EQuad& y) = delete;
@@ -109,6 +110,7 @@ class EQuad {
     // The (rd,wr)=(0,0) iteration executes the else{} branch and
     // continues with (1,1), so we start at (1,1) and avoid the
     // special case for wr-1 at wr=0.
+    check(n_ > 0, "n_ > 0");
     index_t wr = 1;
     for (index_t rd = 1; rd < n_; ++rd) {
       if (ec_[rd].eqndx(ec_[wr - 1])) {

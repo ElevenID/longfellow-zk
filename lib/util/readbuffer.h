@@ -31,8 +31,9 @@ class ReadBuffer {
   explicit ReadBuffer(const std::vector<uint8_t> &v)
       : ReadBuffer(v.data(), v.size()) {}
 
-  // no copies
+  // no copies or rvalue constructors
   ReadBuffer(const ReadBuffer &) = delete;
+  ReadBuffer(const ReadBuffer&&) = delete;
 
   // TRUE if at least N bytes remain
   bool have(size_t n) const { return remaining() >= n; }

@@ -186,6 +186,16 @@ class Fp24 {
     return v;
   }
 
+  struct Accum {
+    Elt acc;
+  };
+
+  Elt reduce(const Accum& a) const { return a.acc; }
+
+  void mac(Accum& a, const Elt& x, const Elt& y) const {
+    add(a.acc, mulf(x, y));
+  }
+
   Elt zero() const { return Elt{0}; }
   const Elt& one() const { return k_[1]; }
   const Elt& two() const { return k_[2]; }
@@ -213,6 +223,7 @@ class Fp24 {
     Elt e;
   };
   CElt as_counter(uint64_t a) const { return CElt{of_scalar_field(a)}; }
+  CElt negf(const CElt& a) const { return CElt{negf(a.e)}; }
 
   // Convert a counter into *some* field element such that the counter is
   // zero (as a counter) iff the field element is zero.
@@ -309,14 +320,16 @@ class Fp24 {
   // private to prevent misuse.
   Elt of_charp(const char* s) const {
     Elt a(k_[0]);
+    size_t zbase = 10;
     Elt base = of_scalar(10);
     if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
       s += 2;
+      zbase = 16;
       base = of_scalar(16);
     }
 
     for (; *s; s++) {
-      Elt d = of_scalar(digit(*s));
+      Elt d = of_scalar(digit(*s, zbase));
       mul(a, base);
       add(a, d);
     }

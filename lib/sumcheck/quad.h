@@ -26,6 +26,7 @@
 #include "arrays/eqs.h"
 #include "sumcheck/equad.h"
 #include "sumcheck/hquad.h"
+#include "util/panic.h"
 
 // ------------------------------------------------------------
 // Representation of the QUAD array used in sumcheck.
@@ -55,6 +56,7 @@ namespace proofs {
 template <class Field>
 class Quad {
   using Elt = typename Field::Elt;
+  using Accum = typename Field::Accum;
   using kvec_t = std::vector<Elt>;
   using ecorner = typename EQuad<Field>::ecorner;
   using hcorner = typename HQuad<Field>::hcorner;
@@ -81,7 +83,9 @@ class Quad {
       : n_(n),
         vc_(n),
         delta_table_(std::move(delta_table)),
-        kvec_(std::move(kvec)) {}
+        kvec_(std::move(kvec)) {
+    check(n > 0, "Quad n > 0");
+  }
 
   // no copies
   Quad(const Quad& y) = delete;
@@ -196,15 +200,13 @@ class Quad {
     Eqs<Field> eqh0(logw, nw, H0, F);
     Eqs<Field> eqh1(logw, nw, H1, F);
 
-    Elt s = F.zero();
-
+    Accum s{};
     for (const auto& ec : *this) {
       Elt q = prep_v(ec.v, eqg[corner_t(ec.g)], beta, F);
       F.mul(q, eqh0.at(corner_t(ec.h[0])));
-      F.mul(q, eqh1.at(corner_t(ec.h[1])));
-      F.add(s, q);
+      F.mac(s, q, eqh1.at(corner_t(ec.h[1])));
     }
-    return s;
+    return F.reduce(s);
   }
 
  private:

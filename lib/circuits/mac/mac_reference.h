@@ -50,11 +50,6 @@ class MACReference {
     }
   }
 
-  void to_bytes(gf2k mac[/*2*/], uint8_t buf[/* 32 */]) {
-    gf_.to_bytes(mac[0], buf);
-    gf_.to_bytes(mac[1], buf + GF::kBytes);
-  }
-
  private:
   GF gf_;
 };

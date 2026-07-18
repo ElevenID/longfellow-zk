@@ -148,6 +148,7 @@ class mdoc_1f {
       }
       gwcb_.invprod_decode = lc.eltw_input();
       gwcb_.cc0_counter = CTRC.input();
+      gwcb_.neg_cc0_counter = CTRC.input();
       gwcb_.invprod_parse = lc.eltw_input();
 
       valid_.input(lc);

@@ -186,6 +186,8 @@ class MerkleTreeVerifier {
           }
         }
       }
+      // Ensure entire proof is consumed.
+      if (sz != proof_len) return false;
     }
 
     // set LAYERS at all leaves in POS

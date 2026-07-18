@@ -273,21 +273,21 @@ class FlatSHA256Circuit {
     }
   }
 
-  // This function extracts the length of the message in bytes from the SHA
-  // block that is verified and also performs other sanity checks on the length.
-  // The length in bits is stored in the last 8 bytes of the nb_th SHA block.
-  v64 find_len(size_t max, const v8 in[/*64*max*/], const v8& nb) const {
-    v64 len = l_.template vbit<64>(0);
+  // This function extracts the length of the message in bits from the SHA
+  // block that is verified.  It only extracts the bits and performs
+  // no other checks.
+  v64 find_len_bits(size_t max, const v8 in[/*64*max*/], const v8& nb) const {
+    v64 len_bits = l_.template vbit<64>(0);
     for (size_t i = 0; i < max; ++i) {
       auto isblk = l_.veq(nb, i + 1);  // If nb == i, i is zero-indexed.
       size_t ind = i * 64 + 63;
       for (size_t j = 0; j < 64; ++j) { /* this loop is over bits */
-        len[j] =
-            l_.lor_exclusive(len[j], l_.land(isblk, in[ind - j / 8][j % 8]));
+        len_bits[j] = l_.lor_exclusive(len_bits[j],
+                                       l_.land(isblk, in[ind - j / 8][j % 8]));
       }
     }
-    l_.vassert_is_bit(len);
-    return len;
+    l_.vassert_is_bit(len_bits);
+    return len_bits;
   }
 
  private:

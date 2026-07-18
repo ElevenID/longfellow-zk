@@ -263,7 +263,7 @@ pseudo-random integers via rejection sampling as follows:
   If `r < m` return `r`, otherwise start over.
 
 ```
-    def generate_nat(self, m):
+    def generate_nat(self, m: int) -> int:
         assert m > 0, "m must be > 0"
 
         l = m.bit_length()
@@ -281,13 +281,13 @@ pseudo-random integers via rejection sampling as follows:
 * `transcript.generate_nats_wo_replacement(m, n)` generates a list of `n` different, random natural numbers between `0` and `m - 1` inclusive.  There are many equivalent algorithms to perform this step.  The following approach requires only `n` calls to the `generate_nat` method.
 
 ```
-	def generate_nats_wo_replacement(m, n):
-	    # assert(m > n)
-	    A = list(range(0, m))
-	    for i in range(0, n):
-	        j = i + generate_nat(m - i)
-	        A[i], A[j] = A[j], A[i]
-	    return A[:n]	
+def generate_nats_wo_replacement(m: int, n: int) -> list[int]:
+    # assert(m > n)
+    A = list(range(0, m))
+    for i in range(0, n):
+        j = i + generate_nat(m - i)
+        A[i], A[j] = A[j], A[i]
+    return A[:n]
 ``` 
     
 * `transcript.generate_field_element(F)` generates a field element.
@@ -325,7 +325,7 @@ As described, the hash function `H` is applied to progressively longer and longe
 {{ligero.md}}
 
 
-# Overview of the Longfellow protocol
+# Overview of the Longfellow protocol {#overview}
 
 The Longfellow ZK protocol uses two protocol components. The first is a variant of the sumcheck protocol, modified to support zero knowledge. Informally, the standard sumcheck prover takes the description of a circuit and the concrete values of all the wires in the circuit, and produces a proof that all wires have been computed correctly.  The proof itself is a sequence of field elements.  Longfellow uses an encrypted-variant of the sumcheck prover that also takes as input a random and secret one-time pad and outputs an "encrypted" proof such that each element in this proof is the difference of the element in the standard sumcheck proof and its corresponding element in the pad.  (The choice of "difference" instead of "sum" is a matter of convention.)
 
@@ -458,7 +458,8 @@ def write_runs(columns, N, F2, F) {
       size_t runlen = 0
       while (ci + runlen < N &&
              runlen < kMaxRunLen &&
-             columns[ci + runlen].is_in_subfield(F2) == subfield_run) {
+             columns[ci + runlen].is_in_subfield(F2) == subfield_run
+             ) {
         ++runlen;
       }
       write_size(runlen, buf);
@@ -513,12 +514,12 @@ struct {
   Version version;     // 1-byte identifier, 0x1.
   FieldID field;       // identifies the field
   FieldID subfield;    // identifies the subfield
-  size nv;             // number of outputs
-	size pub_in;         // number of public inputs
-	size ninputs;        // number of inputs, including witnesses
-	size nl;             // number of layers
-	Elt const_table[];   // array of constants used by the quads
-	CircuitLayer layers[]; 	// array of layers of size nl
+  size num_outputs;    // number of outputs
+  size pub_in;         // number of public inputs
+  size ninputs;        // number of inputs, including witnesses
+  size num_layers;     // number of layers
+  Elt const_table[];   // array of constants used by the quads
+  CircuitLayer layers[]; 	// array of layers of size num_layers
 } Circuit;
 ```
 
@@ -526,9 +527,9 @@ The `const_table` structure contains an array of `Elt` constants that can be ref
 
 ```
 struct {
-  size logw;     // log of number of wires
-  size nw;       // number of wires
-  Quads quads[];  // array of nw Quads
+  size log_num_input_wires;  // log of number of wires
+  size num_input_wires;      // number of wires
+  Quads quads[];             // array of Quads
 } CircuitLayer;
 ```
 

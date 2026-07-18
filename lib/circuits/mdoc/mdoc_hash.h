@@ -65,8 +65,8 @@ class MdocHash {
     // system constrain the sum of the elementIdentifier and elementValue to be
     // at most 56 bytes for a proof to succeed.  We will maintain this API, but
     // publish the constraint about the sum in the documentation.
-    v8 len;      /* public length of the encoded attribute id */
-    v8 vlen;     /* public length of the encoded attribute value */
+    v8 len;  /* public length of the encoded attribute id */
+    v8 vlen; /* public length of the encoded attribute value */
     void input(const LogicCircuit& lc) {
       for (size_t j = 0; j < 32; ++j) {
         attr[j] = lc.template vinput<8>();
@@ -187,8 +187,8 @@ class MdocHash {
     sha_.assert_message_hash(kMaxSHABlocks, vw.nb_, preimage.data(), e,
                              vw.sig_sha_);
 
-    // Find the length of the MSO in bytes. Use this to range check each index.
-    v64 len = sha_.find_len(kMaxSHABlocks, preimage.data(), vw.nb_);
+    // Find the length of the MSO in bits. Use this to range check each index.
+    v64 len_bits = sha_.find_len_bits(kMaxSHABlocks, preimage.data(), vw.nb_);
 
     // Shift a portion of the MSO into buf and check it.
     const v8 zz = lc_.template vbit<8>(0);  // cannot appear in strings
@@ -200,7 +200,7 @@ class MdocHash {
     // The +2 corresponds to the length.
 
     // validFrom <= now
-    check_index(vw.valid_from_.k, len);
+    check_index(vw.valid_from_.k, len_bits);
     r_.shift(vw.valid_from_.k, kValidFromLen + kDateLen, &cmp_buf[0],
              kMaxMsoLen, vw.in_ + 5 + 2, zz, /*unroll=*/3);
     assert_bytes_at(kValidFromLen, &cmp_buf[0], kValidFromCheck);
@@ -208,7 +208,7 @@ class MdocHash {
     lc_.assert1(cmp);
 
     // now <= validUntil
-    check_index(vw.valid_until_.k, len);
+    check_index(vw.valid_until_.k, len_bits);
     r_.shift(vw.valid_until_.k, kValidUntilLen + kDateLen, &cmp_buf[0],
              kMaxMsoLen, vw.in_ + 5 + 2, zz, /*unroll=*/3);
     assert_bytes_at(kValidUntilLen, &cmp_buf[0], kValidUntilCheck);
@@ -216,7 +216,7 @@ class MdocHash {
     lc_.assert1(cmp);
 
     // DPK_{x,y}
-    check_index(vw.dev_key_info_.k, len);
+    check_index(vw.dev_key_info_.k, len_bits);
     r_.shift(vw.dev_key_info_.k, kDeviceKeyInfoLen + 3 + 32 + 32, &cmp_buf[0],
              kMaxMsoLen, vw.in_ + 5 + 2, zz, /*unroll=*/3);
     assert_bytes_at(kDeviceKeyInfoLen, &cmp_buf[0], kDeviceKeyInfoCheck);
@@ -228,7 +228,7 @@ class MdocHash {
 
     // Attributes parsing
     // valueDigests, ignore byte 13 \in {A1,A2} representing map size.
-    check_index(vw.value_digests_.k, len);
+    check_index(vw.value_digests_.k, len_bits);
     r_.shift(vw.value_digests_.k, kValueDigestsLen, cmp_buf.data(), kMaxMsoLen,
              vw.in_ + 5 + 2, zz, /*unroll=*/3);
     assert_bytes_at(13, &cmp_buf[0], kValueDigestsCheck);
@@ -255,7 +255,7 @@ class MdocHash {
       //     5. The attrb_[ai] array is well-formed cbor that includes the
       //        expected elementIdentifier, and elementValue fields as per the
       //        public oa[ai] argument.
-      check_index(vw.attr_mso_[ai].k, len);
+      check_index(vw.attr_mso_[ai].k, len_bits);
       r_.shift(vw.attr_mso_[ai].k, 2 + 32, &cmp_buf[0], kMaxMsoLen,
                vw.in_ + 5 + 2, zz, /*unroll=*/3);
 
@@ -275,11 +275,11 @@ class MdocHash {
                                vw.attr_sha_[ai].data());
 
       // 4. Check the length of the witness.
-      v64 salted_len = sha_.find_len(2, vw.attrb_[ai].data(), two);
+      v64 salted_len_bits = sha_.find_len_bits(2, vw.attrb_[ai].data(), two);
 
       // 5. Check the attribute is well-formed and matches the public argument.
       assert_attribute(128, vw.attrb_[ai].data(), vw.salted_hashes_[ai], oa[ai],
-                       salted_len);
+                       salted_len_bits);
     }
   }
 
@@ -296,10 +296,10 @@ class MdocHash {
     return bbuf;
   }
 
-  vind extract_vind(const v64& len) const {
-    auto low = lc_.template slice<0, 3>(len);
-    auto mid = lc_.template slice<3, 3 + kCborIndexBits>(len);
-    auto hi = lc_.template slice<3 + kCborIndexBits, 64>(len);
+  vind extract_vind(const v64& len_bits) const {
+    auto low = lc_.template slice<0, 3>(len_bits);
+    auto mid = lc_.template slice<3, 3 + kCborIndexBits>(len_bits);
+    auto hi = lc_.template slice<3 + kCborIndexBits, 64>(len_bits);
     // Because check_index is called on several indices, the following two
     // checks will be called several times. However, the compiler removes
     // redundant checks, and it is convenient to verify the ranges in one
@@ -391,7 +391,7 @@ class MdocHash {
   // cbor structure that encodes the OpenedAttribute oa.
   void assert_attribute(size_t max, const v8 buf[/*max*/], const SaltedHash& sh,
                         const OpenedAttribute& oa,
-                        const v64& salted_len) const {
+                        const v64& salted_len_bits) const {
     // Perform a cbor parsing of the buffer, which is expected to be
     // a 4-element key-value array consisting of keys digestId, random,
     // elementIdentifier, and elementValue. Then perform a check on the
@@ -414,7 +414,7 @@ class MdocHash {
 
     // Verify all of the indices and lengths are contiguous and consistent.
     vind five = lc_.template vbit<kCborIndexBits>(5);
-    vind tot = extract_vind(salted_len);
+    vind tot = extract_vind(salted_len_bits);
     lc_.assert_sum(kCborIndexBits, sh.i1.data(), five.data(), sh.l[0].data());
     lc_.assert_sum(kCborIndexBits, sh.i2.data(), sh.i1.data(), sh.l[1].data());
     lc_.assert_sum(kCborIndexBits, sh.i3.data(), sh.i2.data(), sh.l[2].data());

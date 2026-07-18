@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 
+#include "algebra/sysdep.h"
 #include "gtest/gtest.h"
 
 namespace proofs {
@@ -78,6 +79,16 @@ TEST(Limb, Bit) {
   EXPECT_EQ(kk.bit(0), 1);
   EXPECT_EQ(kk.bit(1), 0);
   EXPECT_EQ(kk.bit(256), 0);
+}
+
+TEST(Limb, cmovnz) {
+  using limb_t = Limb<1>::limb_t;
+  limb_t a[1] = {1};
+  limb_t b[1] = {2};
+  cmovnz(1, a, limb_t(0), b);
+  EXPECT_EQ(a[0], 1);
+  cmovnz(1, a, limb_t(1), b);
+  EXPECT_EQ(a[0], 2);
 }
 
 }  // namespace

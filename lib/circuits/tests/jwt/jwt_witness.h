@@ -43,6 +43,9 @@ struct OpenedAttribute {
 template <class Field>
 bool fill_attribute(DenseFiller<Field>& filler, const OpenedAttribute& attr,
                     const Field& F, size_t version) {
+  if (attr.id_len > 32 || attr.value_len > 64) {
+    return false;
+  }
   std::vector<uint8_t> vbuf;
   vbuf.push_back('"');
   vbuf.insert(vbuf.end(), attr.id, attr.id + attr.id_len);
@@ -206,6 +209,11 @@ class JWTWitness {
 
   bool compute_witness(std::string jwt, Elt pkX, Elt pkY,
                        std::vector<OpenedAttribute> attrs) {
+    for (const auto& attr : attrs) {
+      if (attr.id_len > 32 || attr.value_len > 64) {
+        return false;
+      }
+    }
     size_t tilde = jwt.find_first_of('~');
     if (tilde == std::string::npos) {
       log(ERROR, "JWT is not in the format of header.payload.signature~kb");

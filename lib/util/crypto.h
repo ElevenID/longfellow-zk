@@ -21,6 +21,7 @@
 // Finally, this library provides a method to generate random bytes using the
 // openssl library.
 
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -45,7 +46,11 @@ class SHA256 {
   SHA256(const SHA256&) = delete;
   SHA256& operator=(const SHA256&) = delete;
 
-  void Update(const uint8_t bytes[/*n*/], size_t n) { SHA256_Update(&sha_, bytes, n); }
+  void Update(const uint8_t bytes[/*n*/], size_t n) {
+    check(n < INT_MAX, "n < INT_MAX");
+    SHA256_Update(&sha_, bytes, n);
+  }
+
   void DigestData(uint8_t digest[/* kSHA256DigestSize */]) {
     SHA256_Final(digest, &sha_);
   }

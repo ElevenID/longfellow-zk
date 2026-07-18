@@ -59,7 +59,7 @@ class BitPluckerEncoder {
       size_t v = 0;
       for (size_t j = 0; j < LOGN; ++j) {
         if (i * LOGN + j < n) {
-          v += (bits[i * LOGN + j] & 0x1) << j;
+          v += (bits[i * LOGN + j] & 0x1u) << j;
         }
       }
       r[i] = encode(v);

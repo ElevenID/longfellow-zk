@@ -33,7 +33,8 @@
 #include "circuits/mdoc/mdoc_zk.h"
 #include "ec/p256.h"
 #include "gf2k/gf2_128.h"
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
+#include "proto/circuit_writer.h"
 #include "sumcheck/circuit_id.h"
 #include "util/crypto.h"
 #include "util/log.h"
@@ -105,7 +106,7 @@ CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
 
     auto circ = Q.mkcircuit(/*nc=*/1);
     dump_info("sig", Q);
-    CircuitRep<Fp256Base> cr(p256_base, P256_ID);
+    CircuitWriter<Fp256Base> cr(p256_base, P256_ID);
     cr.to_bytes(*circ, bytes);
     uint8_t id[kSHA256DigestSize];
     char buf[100];
@@ -170,7 +171,7 @@ CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
 
     auto circ = Q.mkcircuit(/*nc=*/1);
     dump_info("hash", Q);
-    CircuitRep<f_128> cr(Fs, GF2_128_ID);
+    CircuitWriter<f_128> cr(Fs, GF2_128_ID);
     cr.to_bytes(*circ, bytes);
     uint8_t id[kSHA256DigestSize];
     char buf[100];
@@ -188,6 +189,11 @@ CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
   uint8_t* buf = (uint8_t*)malloc(buf_size);
 
   size_t zl = ZSTD_compress(buf, buf_size, src, sz, 16);
+  if (ZSTD_isError(zl)) {
+    log(ERROR, "ZSTD_compress failed: %s", ZSTD_getErrorName(zl));
+    free(buf);
+    return CIRCUIT_GENERATION_ZLIB_FAILURE;
+  }
   log(INFO, "zstd from %zu --> %zu", sz, zl);
   *clen = zl;
   *cb = buf;

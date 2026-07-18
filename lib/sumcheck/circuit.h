@@ -37,6 +37,10 @@ struct Layer {
 
 template <class Field>
 struct Circuit {
+  static constexpr size_t kMaxLayers = 10000;
+  static constexpr corner_t kMaxCopies = 1ULL << 24;
+  static constexpr corner_t kMaxOutputs = 1ULL << 24;
+
   corner_t nv;  // number of outputs for one copy
   size_t logv;  // number of G variables in V[G,C] in the final output
   corner_t nc;  // number of copies
@@ -67,10 +71,8 @@ struct LayerProof {
   // For efficiency, we distinguish polynomials needed to bind copy
   // variables (CPoly, degree 3) from polynomials needed to bind
   // wire variables (WPoly, degree 2).
-  using CPoly = SumcheckPoly<4, Field>;
-  using WPoly = SumcheckPoly<3, Field>;
-  using FWPoly = Poly<3, Field>;
-  using FCPoly = Poly<4, Field>;
+  using CPoly = Poly<4, Field>;
+  using WPoly = Poly<3, Field>;
 
   // Maximum 2^40 gates/wires/copies per layer.
   static constexpr size_t kMaxBindings = 40;

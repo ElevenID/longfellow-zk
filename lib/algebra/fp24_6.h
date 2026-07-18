@@ -142,6 +142,16 @@ class Fp24_6 {
     return a;
   }
 
+  struct Accum {
+    Elt acc;
+  };
+
+  Elt reduce(const Accum& a) const { return a.acc; }
+
+  void mac(Accum& a, const Elt& x, const Elt& y) const {
+    add(a.acc, mulf(x, y));
+  }
+
   bool fits(uint64_t a) const { return f_.fits(a); }
 
   Elt of_scalar(uint64_t a) const { return of_scalar_field(a); }

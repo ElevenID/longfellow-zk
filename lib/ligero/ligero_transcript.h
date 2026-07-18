@@ -40,18 +40,24 @@ class LigeroTranscript {
 
   static void gen_alphal(size_t nl, Elt alpha[/*nl*/], Transcript& ts,
                          const Field& F) {
-    ts.elt(alpha, nl, F);
+    if (nl > 0) {
+      ts.elt(alpha, nl, F);
+    }
   }
 
   static void gen_alphaq(std::array<Elt, 3> alpha[/*nq*/],
                          const LigeroParam<Field>& p, Transcript& ts,
                          const Field& F) {
-    ts.elt(&alpha[0][0], 3 * p.nq, F);
+    if (p.nq > 0) {
+      ts.elt(&alpha[0][0], 3 * p.nq, F);
+    }
   }
 
   static void gen_uquad(Elt u[/*nqtriples*/], const LigeroParam<Field>& p,
                         Transcript& ts, const Field& F) {
-    ts.elt(u, p.nqtriples, F);
+    if (p.nqtriples > 0) {
+      ts.elt(u, p.nqtriples, F);
+    }
   }
 
   // Choose p.nreq distinct naturals in [0, p.block_enc - p.dblock)

@@ -52,9 +52,6 @@ static inline uint64_t sbb(uint64_t* a, uint64_t b, uint64_t c) {
 static inline uint32_t sbb(uint32_t* a, uint32_t b, uint32_t c) {
   return _subborrow_u32(c, *a, b, a);
 }
-static inline void mulq(uint64_t* l, uint64_t* h, uint64_t a, uint64_t b) {
-  asm("mulx %2, %0, %1" : "=r"(*l), "=r"(*h) : "r"(b), "d"(a));
-}
 #elif defined(__i386__)
 static inline uint32_t adc(uint32_t* a, uint32_t b, uint32_t c) {
   return _addcarry_u32(c, *a, b, a);
@@ -77,8 +74,6 @@ static inline unsigned long long sbb(unsigned long long* a,
   check(false, "sbbll() not defined");
   return 0;
 }
-
-#define SYSDEP_MULQ64_NOT_DEFINED
 #elif defined(__clang__)
 // The clang intrinsics use the builtin-types int, long, etc.
 // Thus we define adc() and sbb() in terms of those types.
@@ -116,6 +111,14 @@ static inline unsigned int sbb(unsigned int* a, unsigned int b,
   return c;
 }
 
+#endif  // defined(__clang__)
+
+// 64x64->128 integer multiplication.  This definition is required for
+// 64-bit limbs and not needed for 32-bit limbs.
+//
+// We trust the compiler to do the right thing.  For example, x86_64
+// should generate a MULQ instruction, but x86_64 -mbmi should generate
+// a more efficient mulx instruction.
 #if defined(__SIZEOF_INT128__)
 // It seems that __SIZEOF_INT128__ is defined if __uint128_t is.
 static inline void mulq(uint64_t* l, uint64_t* h, uint64_t a, uint64_t b) {
@@ -126,8 +129,8 @@ static inline void mulq(uint64_t* l, uint64_t* h, uint64_t a, uint64_t b) {
 #else  // defined(__SIZEOF_INT128__)
 #define SYSDEP_MULQ64_NOT_DEFINED
 #endif  // defined(__SIZEOF_INT128__)
-#endif
 
+// 32x32->64 integer multiplication.
 static inline void mulq(uint32_t* l, uint32_t* h, uint32_t a, uint32_t b) {
   uint64_t p = (uint64_t)b * (uint64_t)a;
   *l = p;
@@ -249,29 +252,33 @@ static inline void cmovnz(size_t W, uint64_t a[/*W*/], uint64_t nz,
     asm("testq %[nz], %[nz]\n\t"
         "cmovneq %[b0], %[a0]\n\t"
         : [a0] "+r"(a[0])
-        : [nz] "r"(nz), [b0] "r"(b[0]));
+        : [nz] "r"(nz), [b0] "r"(b[0])
+        : "cc");
   } else if (W == 2) {
     asm("testq %[nz], %[nz]\n\t"
         "cmovneq %[b0], %[a0]\n\t"
         "cmovneq %[b1], %[a1]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1])
-        : [nz] "r"(nz), [b0] "r"(b[0]), [b1] "r"(b[1]));
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1])
+        : [nz] "r"(nz), [b0] "r"(b[0]), [b1] "r"(b[1])
+        : "cc");
   } else if (W == 3) {
     asm("testq %[nz], %[nz]\n\t"
         "cmovneq %[b0], %[a0]\n\t"
         "cmovneq %[b1], %[a1]\n\t"
         "cmovneq %[b2], %[a2]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1]), [a2] "+r"(a[2])
-        : [nz] "r"(nz), [b0] "r"(b[0]), [b1] "r"(b[1]), [b2] "r"(b[2]));
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1]), [a2] "+&r"(a[2])
+        : [nz] "r"(nz), [b0] "r"(b[0]), [b1] "r"(b[1]), [b2] "r"(b[2])
+        : "cc");
   } else if (W == 4) {
     asm("testq %[nz], %[nz]\n\t"
         "cmovneq %[b0], %[a0]\n\t"
         "cmovneq %[b1], %[a1]\n\t"
         "cmovneq %[b2], %[a2]\n\t"
         "cmovneq %[b3], %[a3]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1]), [a2] "+r"(a[2]), [a3] "+r"(a[3])
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1]), [a2] "+&r"(a[2]), [a3] "+&r"(a[3])
         : [nz] "r"(nz), [b0] "r"(b[0]), [b1] "r"(b[1]), [b2] "r"(b[2]),
-          [b3] "r"(b[3]));
+          [b3] "r"(b[3])
+        : "cc");
   } else {
     for (size_t i = 0; i < W; ++i) {
       a[i] = (nz != 0) ? b[i] : a[i];
@@ -291,7 +298,7 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
     asm("cmpq %[x], %[y]\n\t"
         "cmovneq %[b0], %[a0]\n\t"
         "cmovneq %[b1], %[a1]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1])
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1])
         : [x] "r"(x), [y] "r"(y), [b0] "r"(b[0]), [b1] "r"(b[1])
         : "cc");
   } else if (W == 3) {
@@ -299,7 +306,7 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
         "cmovneq %[b0], %[a0]\n\t"
         "cmovneq %[b1], %[a1]\n\t"
         "cmovneq %[b2], %[a2]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1]), [a2] "+r"(a[2])
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1]), [a2] "+&r"(a[2])
         : [x] "r"(x), [y] "r"(y), [b0] "r"(b[0]), [b1] "r"(b[1]), [b2] "r"(b[2])
         : "cc");
   } else if (W == 4) {
@@ -308,7 +315,7 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
         "cmovneq %[b1], %[a1]\n\t"
         "cmovneq %[b2], %[a2]\n\t"
         "cmovneq %[b3], %[a3]\n\t"
-        : [a0] "+r"(a[0]), [a1] "+r"(a[1]), [a2] "+r"(a[2]), [a3] "+r"(a[3])
+        : [a0] "+&r"(a[0]), [a1] "+&r"(a[1]), [a2] "+&r"(a[2]), [a3] "+&r"(a[3])
         : [x] "r"(x), [y] "r"(y), [b0] "r"(b[0]), [b1] "r"(b[1]),
           [b2] "r"(b[2]), [b3] "r"(b[3])
         : "cc");
@@ -322,7 +329,7 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
 static inline uint64_t addcmovc(uint64_t a, uint64_t b, uint64_t c) {
   asm("add %[b], %[a]\n\t"
       "cmovaeq %[c], %[a]\n\t"
-      : [a] "+r"(a)
+      : [a] "+&r"(a)
       : [b] "r"(b), [c] "r"(c)
       : "cc");
   return a;
@@ -332,7 +339,7 @@ static inline uint64_t sub_sysdep(uint64_t a, uint64_t y, uint64_t m) {
   uint64_t z = 0;
   asm("subq %[y], %[a]\n\t"
       "cmovbq %[m], %[z]\n\t"
-      : [a] "+r"(a), [z] "+r"(z)
+      : [a] "+&r"(a), [z] "+r"(z)
       : [y] "r"(y), [m] "r"(m)
       : "cc");
   return a + z;
@@ -379,8 +386,8 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
     asm("cmp %[x], %[y]\n\t"                //
         "csel %[a0], %[a0], %[b0], eq\n\t"  //
         "csel %[a1], %[a1], %[b1], eq\n\t"  //
-        : [a0] "+r"(a[0]),                  //
-          [a1] "+r"(a[1])                   //
+        : [a0] "+&r"(a[0]),                 //
+          [a1] "+&r"(a[1])                  //
         : [x] "r"(x), [y] "ri"(y),          //
           [b0] "r"(b[0]),                   //
           [b1] "r"(b[1])                    //
@@ -390,9 +397,9 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
         "csel %[a0], %[a0], %[b0], eq\n\t"  //
         "csel %[a1], %[a1], %[b1], eq\n\t"  //
         "csel %[a2], %[a2], %[b2], eq\n\t"  //
-        : [a0] "+r"(a[0]),                  //
-          [a1] "+r"(a[1]),                  //
-          [a2] "+r"(a[2])                   //
+        : [a0] "+&r"(a[0]),                 //
+          [a1] "+&r"(a[1]),                 //
+          [a2] "+&r"(a[2])                  //
         : [x] "r"(x), [y] "ri"(y),          //
           [b0] "r"(b[0]),                   //
           [b1] "r"(b[1]),                   //
@@ -404,10 +411,10 @@ static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
         "csel %[a1], %[a1], %[b1], eq\n\t"  //
         "csel %[a2], %[a2], %[b2], eq\n\t"  //
         "csel %[a3], %[a3], %[b3], eq\n\t"  //
-        : [a0] "+r"(a[0]),                  //
-          [a1] "+r"(a[1]),                  //
-          [a2] "+r"(a[2]),                  //
-          [a3] "+r"(a[3])                   //
+        : [a0] "+&r"(a[0]),                 //
+          [a1] "+&r"(a[1]),                 //
+          [a2] "+&r"(a[2]),                 //
+          [a3] "+&r"(a[3])                  //
         : [x] "r"(x), [y] "ri"(y),          //
           [b0] "r"(b[0]),                   //
           [b1] "r"(b[1]),                   //
@@ -431,7 +438,7 @@ static inline void cmovnz(size_t W, uint64_t a[/*W*/], uint64_t nz,
 static inline uint64_t addcmovc(uint64_t a, uint64_t b, uint64_t c) {
   asm("adds %[a], %[a], %[b]\n\t"
       "csel %[a], %[a], %[c], hs\n\t"
-      : [a] "+r"(a)
+      : [a] "+&r"(a)
       : [b] "r"(b), [c] "r"(c)
       : "cc");
   return a;
@@ -440,7 +447,7 @@ static inline uint64_t addcmovc(uint64_t a, uint64_t b, uint64_t c) {
 static inline uint64_t sub_sysdep(uint64_t a, uint64_t y, uint64_t m) {
   asm("subs %[a], %[a], %[y]\n\t"
       "csel %[m], %[m], xzr, lo"
-      : [a] "+r"(a), [m] "+r"(m)
+      : [a] "+&r"(a), [m] "+r"(m)
       : [y] "r"(y)
       : "cc");
   return a + m;

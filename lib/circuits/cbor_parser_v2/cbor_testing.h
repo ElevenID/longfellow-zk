@@ -78,6 +78,7 @@ class CborTesting {
       for (size_t j = 0; j < CborWitnessF::kNCounters; ++j) {
         pw[i].cc_next[j] = CTR.as_counter(pwS[i].cc_next[j]);
       }
+      pw[i].neg_sum_counters = CTR.as_counter(pwS[i].neg_sum_counters);
       pw[i].invprod_decode = L.konst(pwS[i].invprod_decode);
       pw[i].invprod_parse = L.konst(pwS[i].invprod_parse);
     }

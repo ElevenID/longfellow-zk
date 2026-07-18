@@ -35,7 +35,8 @@
 #include "ec/p256.h"
 #include "gf2k/gf2_128.h"
 #include "gf2k/lch14_reed_solomon.h"
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
+#include "proto/circuit_reader.h"
 #include "random/secure_random_engine.h"
 #include "random/transcript.h"
 #include "sumcheck/circuit.h"
@@ -345,33 +346,37 @@ bool cbor_validate(const uint8_t* in, size_t len) {
     return false;
   }
 
-  switch (doc.t_) {
+  switch (doc.variant()) {
     case TEXT:
     case BYTES:
     case UNSIGNED:
     case NEGATIVE:
       return true;
 
-    case PRIMITIVE:
-      return (doc.u_.p == CTRUE || doc.u_.p == CFALSE);
+    case PRIMITIVE: {
+      CborPrimitive p = doc.as_primitive();
+      return (p == CTRUE || p == CFALSE);
+    }
 
     case TAG: {
       // items.n is the tag value
-      size_t tag = doc.u_.items.n;
-      if (tag == 1004) {  // Fulldate
-        if (len != 14) return false;
-        // Check inner type is TEXT? CborDoc handles valid children decode.
-        // host_decoder.h: case 6 (TAG) ... decode_items ...
-        // We know it has 1 child.
-        if (doc.children_.empty() || doc.children_[0].t_ != TEXT) return false;
-        return true;
+      size_t tag = doc.as_tag();
+      CborTag inner_tag = doc.tagged_value().variant();
+      switch (tag) {
+        case 1004:  // Fulldate
+          if (len != 14) return false;
+          // Check inner type is TEXT? CborDoc handles valid children decode.
+          // host_decoder.h: case 6 (TAG) ... decode_items ...
+          // We know it has 1 child.
+          if (inner_tag != TEXT) return false;
+          return true;
+        case 0:  // Tdate
+          if (len != 22) return false;
+          if (inner_tag != TEXT) return false;
+          return true;
+        default:
+          return false;
       }
-      if (tag == 0) {  // Tdate
-        if (len != 22) return false;
-        if (doc.children_.empty() || doc.children_[0].t_ != TEXT) return false;
-        return true;
-      }
-      return false;
     }
 
     default:
@@ -404,6 +409,13 @@ MdocProverErrorCode run_mdoc_prover(
     return MDOC_PROVER_NULL_INPUT;
   }
 
+  for (size_t i = 0; i < attrs_len; ++i) {
+    if (attrs[i].namespace_len > 64 || attrs[i].id_len > 32 ||
+        attrs[i].cbor_value_len > 64) {
+      return MDOC_PROVER_INVALID_INPUT;
+    }
+  }
+
   Elt pkX, pkY;
   if (!parsePk(pkx, pky, pkX, pkY)) {
     log(ERROR, "invalid pkx, pky");
@@ -433,13 +445,13 @@ MdocProverErrorCode run_mdoc_prover(
     log(INFO, "bytes len: %zu", full_size);
     ReadBuffer rb_circuit(bytes.data(), full_size);
 
-    CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
+    CircuitReader<Fp256Base> cr_s(p256_base, P256_ID);
     c_sig = cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
     if (c_sig == nullptr) {
       log(ERROR, "signature circuit could not be parsed");
       return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
     }
-    CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
+    CircuitReader<f_128> cr_h(Fs, GF2_128_ID);
     c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
 
     if (c_hash == nullptr) {
@@ -548,6 +560,13 @@ MdocVerifierErrorCode run_mdoc_verifier(
     return MDOC_VERIFIER_NULL_INPUT;
   }
 
+  for (size_t i = 0; i < attrs_len; ++i) {
+    if (attrs[i].namespace_len > 64 || attrs[i].id_len > 32 ||
+        attrs[i].cbor_value_len > 64) {
+      return MDOC_VERIFIER_INVALID_INPUT;
+    }
+  }
+
   Elt pkX, pkY;
   if (!parsePk(pkx, pky, pkX, pkY)) {
     log(ERROR, "invalid pkx, pky");
@@ -587,14 +606,14 @@ MdocVerifierErrorCode run_mdoc_verifier(
   log(INFO, "bytes len: %zu", full_size);
 
   ReadBuffer rb_circuit(bytes.data(), full_size);
-  CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
+  CircuitReader<Fp256Base> cr_s(p256_base, P256_ID);
   auto c_sig = cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_verifier);
   if (c_sig == nullptr) {
     log(ERROR, "signature circuit could not be parsed");
     return MDOC_VERIFIER_CIRCUIT_PARSING_FAILURE;
   }
 
-  CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
+  CircuitReader<f_128> cr_h(Fs, GF2_128_ID);
   auto c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_verifier);
 
   if (c_hash == nullptr) {

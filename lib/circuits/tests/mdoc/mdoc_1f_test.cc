@@ -134,6 +134,7 @@ void fill_eval_witness(MW& vw, const RMW& rvw, const Logic& L) {
   }
   vw.gwcb_.invprod_decode = L.konst(rvw.gwcb_.invprod_decode);
   vw.gwcb_.cc0_counter = CTR.as_counter(rvw.gwcb_.cc0_counter);
+  vw.gwcb_.neg_cc0_counter = CTR.as_counter(rvw.gwcb_.neg_cc0_counter);
   vw.gwcb_.invprod_parse = L.konst(rvw.gwcb_.invprod_parse);
 
   // The cbor indices need to be offset by the value of prepad because
@@ -334,6 +335,9 @@ TEST(Mdoc1fTest, RunsExamples) {
 
 // ============ Benchmarks =====================================================
 
+constexpr size_t kZKRate = 7;
+constexpr size_t kZKQueries = 132;
+
 void BM_Mdoc1fProver(benchmark::State& state) {
   if (SanitizedMdocFixtures()) {
     state.SkipWithError("sanitized build omits mdoc proof fixtures");
@@ -366,7 +370,7 @@ void BM_Mdoc1fProver(benchmark::State& state) {
 
   SecureRandomEngine rng;
 
-  ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+  ZkProof<Fp256Base> zkpr(*CIRCUIT, kZKRate, kZKQueries);
   ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
 
   for (auto s : state) {

@@ -60,7 +60,7 @@ void set_log_level(enum LogLevel l) { _LOG_LEVEL = l; }
 void log(enum LogLevel l, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  char tmp[1024];
+  char tmp[1024] = {0};
   vsnprintf(tmp, sizeof(tmp), format, args);
   va_end(args);
 

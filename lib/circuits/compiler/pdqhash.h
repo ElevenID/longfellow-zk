@@ -21,6 +21,7 @@
 #include <functional>
 #include <vector>
 
+#include "util/panic.h"
 #define DEFINE_STRONG_INT_TYPE(a, b) using a = b
 
 namespace proofs {
@@ -63,12 +64,12 @@ class PdqHash {
     insert0(narrow(k64), v);
   }
 
-  size_t find(uint64_t k64, const std::function<bool(value_t)> &pred) {
+  size_t find(uint64_t k64, const std::function<bool(value_t)>& pred) {
     stored_key_t k = narrow(k64);
     size_t mask = (size_t(1) << bits_) - 1;
     size_t dh = dhash(k);
     for (size_t h = hash(k);; h += dh) {
-      const kv *p = &table_[h & mask];
+      const kv* p = &table_[h & mask];
       if (p->v == kNil) {
         // not found
         return kNil;
@@ -82,10 +83,11 @@ class PdqHash {
 
  private:
   void insert0(stored_key_t k, value_t v) {
+    check(v != kNil, "v != kNil");
     size_t mask = (size_t(1) << bits_) - 1;
     size_t dh = dhash(k);
     for (size_t h = hash(k);; h += dh) {
-      kv *p = &table_[h & mask];
+      kv* p = &table_[h & mask];
       if (p->v == kNil) {
         p->k = k;
         p->v = v;
@@ -97,7 +99,9 @@ class PdqHash {
 
   // Adhoc hash function suffices for this application.
   uint64_t hash(uint64_t k) {
-    return k + 3 * (k >> bits_) + 7 * (k >> (2 * bits_));
+    // The funny (x >> a) >> a instead of (x >> (2 * a)) avoid potential
+    // undefined behavior for large a.
+    return k + 3 * (k >> bits_) + 7 * ((k >> bits_) >> bits_);
   }
   uint64_t hash(stored_key_t nk) { return hash(static_cast<uint64_t>(nk)); }
   uint64_t dhash(stored_key_t nk) {
@@ -109,7 +113,8 @@ class PdqHash {
     ++bits_;
     std::vector<kv> table1(capacity());
     table_.swap(table1);
-    for (const auto &p : table1) {
+    sz_ = 0;
+    for (const auto& p : table1) {
       if (p.v != kNil) {
         insert0(p.k, p.v);
       }

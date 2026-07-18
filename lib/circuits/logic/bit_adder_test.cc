@@ -16,7 +16,6 @@
 
 #include <stddef.h>
 
-
 #include "algebra/fp_p128.h"
 #include "circuits/logic/evaluation_backend.h"
 #include "circuits/logic/logic.h"

@@ -163,14 +163,16 @@ class Sparse {
   }
 
   void canonicalize(const Field& F) {
-    std::sort(c_.begin(), c_.end(), [&F](const corner& x, const corner& y) {
-      return corner::compare(x, y, F);
-    });
+    std::sort(c_.begin(), c_.begin() + n_,
+              [&F](const corner& x, const corner& y) {
+                return corner::compare(x, y, F);
+              });
     return coalesce(F);
   }
 
  private:
   void coalesce(const Field& F) {
+    if (n_ == 0) return;
     // Coalesce duplicates.
     // The (rd,wr)=(0,0) iteration executes the else{} branch and
     // continues with (1,1), so we start at (1,1) and avoid the

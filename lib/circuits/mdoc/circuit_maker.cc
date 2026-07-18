@@ -39,7 +39,9 @@
 #include "ec/p256.h"
 #include "gf2k/gf2_128.h"
 #include "ligero/ligero_param.h"
-#include "proto/circuit.h"
+#include "proto/circuit_io.h"
+#include "proto/circuit_reader.h"
+
 
 
 ABSL_FLAG(std::string, output_dir, "circuits",
@@ -88,12 +90,12 @@ void optimize_params(const uint8_t* circuit_bytes, size_t circuit_len,
   proofs::check(full_size > 0, "Circuit decompression failed");
   proofs::ReadBuffer rb_circuit(bytes.data(), full_size);
 
-  proofs::CircuitRep<proofs::Fp256Base> cr_s(proofs::p256_base,
+  proofs::CircuitReader<proofs::Fp256Base> cr_s(proofs::p256_base,
                                              proofs::P256_ID);
   auto c_sig = cr_s.from_bytes(rb_circuit, false);
   proofs::check(c_sig != nullptr, "Signature circuit could not be parsed");
 
-  proofs::CircuitRep<f_128> cr_h(Fs, proofs::GF2_128_ID);
+  proofs::CircuitReader<f_128> cr_h(Fs, proofs::GF2_128_ID);
   auto c_hash = cr_h.from_bytes(rb_circuit, false);
   proofs::check(c_hash != nullptr, "Hash circuit could not be parsed");
 

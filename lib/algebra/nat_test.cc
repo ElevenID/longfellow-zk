@@ -37,6 +37,50 @@ TEST(Nat, Lt) {
   }
 }
 
+TEST(Nat, Equality) {
+  constexpr size_t W = 4;
+  std::array<uint64_t, W> a64_1 = {1, 2, 3, 4};
+  std::array<uint64_t, W> a64_2 = {1, 2, 3, 4};
+  std::array<uint64_t, W> a64_3 = {5, 2, 3, 4};
+  std::array<uint64_t, W> a64_4 = {1, 2, 3, 5};
+  std::array<uint64_t, W> a64_5 = {1, 5, 3, 4};
+
+  Nat<W> a1(a64_1);
+  Nat<W> a2(a64_2);
+  Nat<W> a3(a64_3);
+  Nat<W> a4(a64_4);
+  Nat<W> a5(a64_5);
+
+  EXPECT_TRUE(a1 == a2);
+  EXPECT_FALSE(a1 != a2);
+
+  EXPECT_FALSE(a1 == a3);
+  EXPECT_TRUE(a1 != a3);
+
+  EXPECT_FALSE(a1 == a4);
+  EXPECT_TRUE(a1 != a4);
+
+  EXPECT_FALSE(a1 == a5);
+  EXPECT_TRUE(a1 != a5);
+}
+
+TEST(Nat, Cmovnz) {
+  constexpr size_t W = 4;
+  std::array<uint64_t, W> a64_1 = {1, 2, 3, 4};
+  std::array<uint64_t, W> a64_2 = {5, 6, 7, 8};
+
+  Nat<W> a1(a64_1);
+  Nat<W> a2(a64_2);
+
+  // nz = 0, should not move
+  a1.cmovnz(0, a2);
+  EXPECT_EQ(a1, Nat<W>(a64_1));
+
+  // nz != 0, should move
+  a1.cmovnz(1, a2);
+  EXPECT_EQ(a1, Nat<W>(a64_2));
+}
+
 void oneTestInvModB64(uint64_t i) {
   uint64_t j = inv_mod_b(i);
   EXPECT_EQ(i * j, (uint64_t)1);
@@ -161,12 +205,14 @@ TEST(Nat, OfUntrustedStringValid) {
 }
 
 TEST(Nat, BadDigits) {
+#if GTEST_HAS_DEATH_TEST
   std::string ok = "0123456789abcdefABCDEF";
-  for (uint8_t i = 0; i < (uint8_t)256; ++i) {
+  for (int i = 0; i < 256; ++i) {
     if (ok.find((char)i) == std::string::npos) {  // bad char
-      EXPECT_DEATH(digit((char)i), "bad char");
+      EXPECT_DEATH(digit((char)i, 16), "malformed numeral in digit()");
     }
   }
+#endif
 }
 
 TEST(Nat, HexConstructor) {

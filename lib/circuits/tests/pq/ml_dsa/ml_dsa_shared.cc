@@ -12,13 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "circuits/tests/pq/ml_dsa/ml_dsa_44_types.h"
+#include "circuits/tests/pq/ml_dsa/ml_dsa_shared.h"
 
 #include "algebra/fp24.h"
+
 namespace proofs {
 namespace ml_dsa {
 
-const Fp24 Fq = Fp24(Q);
-
+const Fp24& Fq() {
+  static const Fp24 fq(Q);
+  return fq;
 }
+
+}  // namespace ml_dsa
 }  // namespace proofs

@@ -69,33 +69,6 @@ void one_test_eval_lagrange() {
   }
 }
 
-template <size_t N, size_t W>
-void one_test_extend() {
-  using Field = Fp<W>;
-  using T2 = Poly<2, Field>;
-  using FT = Poly<N, Field>;
-  using Elt = typename Field::Elt;
-  const Field F(primes[W - 1]);
-  Bogorng<Field> rng(&F);
-
-  // Test the linear extension.  Start with a polynomial
-  // L2 of degree <2, and extend it to a polynomial L
-  // of degree <N, then evaluate both at random points.
-  for (size_t iter = 0; iter < 10; ++iter) {
-    T2 L2;
-    L2[0] = rng.next();
-    L2[1] = rng.next();
-
-    FT L = FT::extend(L2, F);
-
-    for (size_t iter1 = 0; iter1 < 10; iter1++) {
-      auto r = rng.next();
-      Elt got = L.eval_lagrange(r, F);
-      Elt got2 = L2.eval_lagrange(r, F);
-      EXPECT_EQ(got, got2);
-    }
-  }
-}
 
 template <size_t W>
 void oneW() {
@@ -104,11 +77,6 @@ void oneW() {
   one_test_eval_lagrange<4, W>();
   one_test_eval_lagrange<5, W>();
   one_test_eval_lagrange<6, W>();
-  one_test_extend<2, W>();
-  one_test_extend<3, W>();
-  one_test_extend<4, W>();
-  one_test_extend<5, W>();
-  one_test_extend<6, W>();
 }
 
 TEST(Poly, All) {

@@ -44,7 +44,7 @@ class Prover : public ProverLayers<Field> {
   // the inputs do not satisfy the circuit.
   void prove(Proof<Field>* proof, const Proof<Field>* pad,
              const Circuit<Field>* circ, const inputs& in, Transcript& t) {
-    if (proof == nullptr || circ == nullptr) return;
+    if (proof == nullptr || circ == nullptr || circ->nl == 0) return;
 
     TranscriptSumcheck<Field> ts(t, super::f_);
     // The input X is stored at in's layer nl - 1.

@@ -91,6 +91,29 @@ void test_counter() {
       }
     }
   }
+
+  {
+    // Range addition works as expected
+    auto r_sum = CTR.add(0, w, [&](size_t i) { return CTR.as_counter(i); });
+    size_t expected_sum = w * (w - 1) / 2;
+    CTR.assert_eq(r_sum, CTR.as_counter(expected_sum));
+    EXPECT_FALSE(ebk.assertion_failed());
+  }
+
+  {
+    // Empty range addition works as expected
+    auto empty_sum = CTR.add(3, 3, [&](size_t i) { return CTR.as_counter(i); });
+    CTR.assert_eq(empty_sum, CTR.as_counter(0));
+    EXPECT_FALSE(ebk.assertion_failed());
+  }
+
+  {
+    // Single element range addition works as expected
+    auto single_sum =
+        CTR.add(3, 4, [&](size_t i) { return CTR.as_counter(i); });
+    CTR.assert_eq(single_sum, CTR.as_counter(3));
+    EXPECT_FALSE(ebk.assertion_failed());
+  }
 }
 
 TEST(Counter, Fields) {

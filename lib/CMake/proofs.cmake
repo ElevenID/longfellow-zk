@@ -28,14 +28,32 @@ macro(proofs_add_testing_libraries PROG)
 #    target_link_libraries(${PROG} -static)
 
     # on Debian buster, gtest seems to need pthread
-    target_link_libraries(${PROG} gtest pthread)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+        target_link_libraries(${PROG} gtest log)
+    else()
+        target_link_libraries(${PROG} gtest pthread)
+    endif()
+
     target_link_libraries(${PROG} benchmark::benchmark)
 
-    gtest_discover_tests(${PROG})
+    # Do not auto-discover tests on ios or android
+    if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+        gtest_discover_tests(${PROG})
+    endif()
 endmacro()
 
 macro(proofs_add_test PROG)
-    add_executable(${PROG} ${PROG}.cc ${ARGN})
+    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        add_executable(${PROG} MACOSX_BUNDLE ${PROG}.cc ${ARGN})
+        set_target_properties(${PROG} PROPERTIES
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.longfellow"
+            MACOSX_BUNDLE_BUNDLE_NAME "${PROG}"
+            XCODE_SCHEME_BUILD_CONFIGURATION "Release"
+            XCODE_SCHEME_ARGUMENTS "--benchmark_filter=BM*")
+    else()
+        add_executable(${PROG} ${PROG}.cc ${ARGN})
+    endif()
+
     target_link_libraries(${PROG} ec)    
     target_link_libraries(${PROG} algebra)
     target_link_libraries(${PROG} util)

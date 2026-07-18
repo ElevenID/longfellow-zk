@@ -233,92 +233,164 @@ TEST(Sumcheck, EvalCircuit) {
   Proof<Field> P(CIRCUIT->nl);
 }
 
-void one_test_sumcheck_without_com(const Circuit<Field>* CIRCUIT) {
-  auto nc = CIRCUIT->nc;
-  auto nl = CIRCUIT->nl;
+// New enums and functions for Zero Output test
+enum { wZ_X1, wZ_Y1, wZ_Z1, wZ_X2, wZ_Y2, wZ_Z2, wZ_X3, wZ_Y3, wZ_Z3, wZ_ONE };
 
-  // random inputs
-  auto Wprover = std::make_unique<Dense<Field>>(nc, CIRCUIT->l[nl - 1].nw);
-  for (corner_t i = 0; i < Wprover->n0_ * Wprover->n1_; ++i) {
-    Wprover->v_[i] = rng.next();
+std::unique_ptr<Quad<Field>> addE_zero_quad0() {
+  testquad Q[] = {
+      // X3_check = t1 t2 - 3b t3 t4 - X3 * ONE
+      {kone, 0, 1, 2},
+      {F.negf(k3b), 0, 3, 4},
+      {F.negf(kone), 0, 6, 9},
+
+      // Y3_check = t0 t2 + 9b t5 t4 - Y3 * ONE
+      {kone, 1, 0, 2},
+      {k9b, 1, 5, 4},
+      {F.negf(kone), 1, 7, 9},
+
+      // Z3_check = t3 t0 + 3 t5 t1 - Z3 * ONE
+      {kone, 2, 3, 0},
+      {k3, 2, 5, 1},
+      {F.negf(kone), 2, 8, 9},
+  };
+  return sparse_of_testquad(NELEM(Q), Q);
+}
+
+std::unique_ptr<Quad<Field>> addE_zero_quad1() {
+  testquad Q[] = {
+      // t0 = (Y1 Y2 + 3b Z1 Z2)
+      {kone, 0, wZ_Y1, wZ_Y2},
+      {k3b, 0, wZ_Z1, wZ_Z2},
+
+      // t1 = (X1 Y2 + X2 Y1)
+      {kone, 1, wZ_X1, wZ_Y2},
+      {kone, 1, wZ_X2, wZ_Y1},
+
+      // t2 = (Y1 Y2 - 3b Z1 Z2)
+      {kone, 2, wZ_Y1, wZ_Y2},
+      {F.negf(k3b), 2, wZ_Z1, wZ_Z2},
+
+      // t3 = (Y1 Z2 + Y2 Z1)
+      {kone, 3, wZ_Y1, wZ_Z2},
+      {kone, 3, wZ_Y2, wZ_Z1},
+
+      // t4 = (X1 Z2 + X2 Z1)
+      {kone, 4, wZ_X1, wZ_Z2},
+      {kone, 4, wZ_X2, wZ_Z1},
+
+      // t5 = X1 X2
+      {kone, 5, wZ_X1, wZ_X2},
+
+      // pass through X3, Y3, Z3, ONE
+      {kone, 6, wZ_X3, wZ_ONE},
+      {kone, 7, wZ_Y3, wZ_ONE},
+      {kone, 8, wZ_Z3, wZ_ONE},
+      {kone, 9, wZ_ONE, wZ_ONE},
+  };
+  return sparse_of_testquad(NELEM(Q), Q);
+}
+
+std::unique_ptr<Circuit<Field>> addE_zero_circuit(size_t logc, corner_t nc) {
+  std::unique_ptr<Circuit<Field>> c = std::make_unique<Circuit<Field>>();
+  *c = Circuit<Field>{
+      .nv = 3,  // outputs
+      .logv = 2,
+      .nc = nc,
+      .logc = logc,
+      .nl = 2,
+  };
+  c->l.push_back(Layer<Field>{.nw = 10, .logw = 4, .quad = addE_zero_quad0()});
+  c->l.push_back(Layer<Field>{.nw = 10, .logw = 4, .quad = addE_zero_quad1()});
+
+  return c;
+}
+
+TEST(Sumcheck, ZeroOutput) {
+  size_t logc = 4;
+  corner_t nc = 10;
+  auto CIRCUIT = addE_zero_circuit(logc, nc);
+  auto Wprover = std::make_unique<Dense<Field>>(nc, 10);
+
+  for (corner_t i = 0; i < nc; ++i) {
+    // Generate random p0 and p1
+    Elt X1 = rng.next(), Y1 = rng.next(), Z1 = rng.next();
+    Elt X2 = rng.next(), Y2 = rng.next(), Z2 = rng.next();
+
+    Wprover->v_[i + nc * wZ_X1] = X1;
+    Wprover->v_[i + nc * wZ_Y1] = Y1;
+    Wprover->v_[i + nc * wZ_Z1] = Z1;
+    Wprover->v_[i + nc * wZ_X2] = X2;
+    Wprover->v_[i + nc * wZ_Y2] = Y2;
+    Wprover->v_[i + nc * wZ_Z2] = Z2;
+
+    // Compute p2 = addE(p0, p1)
+    Elt X3, Y3, Z3;
+    addE(&X3, &Y3, &Z3, X1, Y1, Z1, X2, Y2, Z2);
+
+    Wprover->v_[i + nc * wZ_X3] = X3;
+    Wprover->v_[i + nc * wZ_Y3] = Y3;
+    Wprover->v_[i + nc * wZ_Z3] = Z3;
+
+    // Force wONE to be 1
+    Wprover->v_[i + nc * wZ_ONE] = F.one();
   }
+
   auto Wverifier = Wprover->clone();
 
   Proof<Field> proof(CIRCUIT->nl);
   Prover<Field>::inputs in;
   Prover<Field> prover(F);
-  auto V = prover.eval_circuit(&in, CIRCUIT, std::move(Wprover), F);
+  auto V = prover.eval_circuit(&in, CIRCUIT.get(), std::move(Wprover), F);
 
-  Transcript tsp((uint8_t *)"test", 4);
-  prover.prove(&proof, nullptr, CIRCUIT, in, tsp);
+  // Verify that outputs are zero
+  for (corner_t i = 0; i < nc * 3; ++i) {
+    EXPECT_EQ(V->v_[i], F.zero());
+  }
+
+  Transcript tsp((uint8_t*)"test", 4);
+  prover.prove(&proof, nullptr, CIRCUIT.get(), in, tsp);
 
   const char* why;
-  Transcript tsv((uint8_t *)"test", 4);
-  bool ok = Verifier<Field>::verify(&why, CIRCUIT, &proof, std::move(V),
+  Transcript tsv((uint8_t*)"test", 4);
+  bool ok = Verifier<Field>::verify(&why, CIRCUIT.get(), &proof,
                                     std::move(Wverifier), tsv, F);
   EXPECT_EQ(ok, true);
   EXPECT_EQ(why, "ok");
 }
 
-void one_test_sumcheck(const Circuit<Field>* CIRCUIT) {
-  one_test_sumcheck_without_com(CIRCUIT);
-}
-
-TEST(Sumcheck, SumcheckAddE) {
-  auto CIRCUIT = addE_circuit(8, corner_t(177));
-  one_test_sumcheck(CIRCUIT.get());
-}
-
-TEST(Sumcheck, SumcheckAddEOneCopy) {
-  auto CIRCUIT = addE_circuit(0, corner_t(1));
-  one_test_sumcheck(CIRCUIT.get());
-}
-
-// ------------------------------------------------------------
-// tests with random circuits
-size_t around(size_t n) { return n + (std::rand() % n); }
-quad_corner_t rand_corner(size_t n) { return quad_corner_t(std::rand()) % n; }
-
-std::unique_ptr<Quad<Field>> random_quad(index_t n, corner_t nv, corner_t nw) {
-  auto S = std::make_unique<EQuad<Field>>(n);
-  for (index_t i = 0; i < n; i++) {
-    S->ec_[i] = ecorner{
-        .g = rand_corner(nv),
-        .h = {rand_corner(nw), rand_corner(nw)},
-        .v = rng.next(),
-    };
+TEST(Sumcheck, Limits) {
+  size_t logc = 4;
+  corner_t nc = 10;
+  auto CIRCUIT = addE_zero_circuit(logc, nc);
+  auto Wprover = std::make_unique<Dense<Field>>(nc, 10);
+  for (corner_t i = 0; i < nc; ++i) {
+    Wprover->v_[i + nc * wZ_ONE] = F.one();
   }
-  S->canonicalize(F);
-  return QuadBuilder<Field>::compress(S.get(), F);
+  auto Wverifier = Wprover->clone();
+  Proof<Field> proof(CIRCUIT->nl);
+
+  Transcript tsv((uint8_t*)"test", 4);
+  const char* why;
+
+  // Verify failure for too many layers
+  CIRCUIT->nl = Circuit<Field>::kMaxLayers + 1;
+  EXPECT_FALSE(Verifier<Field>::verify(&why, CIRCUIT.get(), &proof,
+                                       Wverifier->clone(), tsv, F));
+  EXPECT_STREQ(why, "too many layers");
+  CIRCUIT->nl = 2;  // Restore
+
+  CIRCUIT->nc = Circuit<Field>::kMaxCopies + 1;
+  EXPECT_FALSE(Verifier<Field>::verify(&why, CIRCUIT.get(), &proof,
+                                       Wverifier->clone(), tsv, F));
+  EXPECT_STREQ(why, "too many copies");
+  CIRCUIT->nc = nc;  // Restore
+
+  CIRCUIT->nv = Circuit<Field>::kMaxOutputs + 1;
+  EXPECT_FALSE(Verifier<Field>::verify(&why, CIRCUIT.get(), &proof,
+                                       Wverifier->clone(), tsv, F));
+  EXPECT_STREQ(why, "too many outputs");
+  CIRCUIT->nv = 3;  // Restore
 }
 
-std::unique_ptr<Circuit<Field>> random_circuit() {
-  std::unique_ptr<Circuit<Field>> CIRCUIT = std::make_unique<Circuit<Field>>();
-  *CIRCUIT = Circuit<Field>{
-      .nv = around(7),
-      .logv = 4,
-      .nc = around(12),
-      .logc = 5,
-      .nl = around(5),
-  };
-  size_t nv = CIRCUIT->nv;
-  for (size_t ly = 0; ly < CIRCUIT->nl; ++ly) {
-    corner_t nw = around(20);
-    CIRCUIT->l.push_back(Layer<Field>{
-        .nw = nw,
-        .logw = 6,
-        .quad = random_quad(around(300), nv, nw),
-    });
-    nv = nw;  // outputs of next layer == inputs of this layer
-  }
-  return CIRCUIT;
-}
-
-TEST(Sumcheck, RandomCircuit) {
-  for (size_t i = 0; i < 10; ++i) {
-    auto CIRCUIT = random_circuit();
-    one_test_sumcheck(CIRCUIT.get());
-  }
-}
 }  // namespace
 }  // namespace proofs

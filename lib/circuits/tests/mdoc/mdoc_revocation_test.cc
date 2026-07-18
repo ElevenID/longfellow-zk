@@ -301,7 +301,7 @@ void BM_MdocRevocationProver(benchmark::State& state) {
   Transcript tp((uint8_t*)"test", 4);
   SecureRandomEngine rng;
 
-  ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+  ZkProof<Fp256Base> zkpr(*CIRCUIT, kLigeroRate, kLigeroNreq);
   ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
 
   for (auto s : state) {

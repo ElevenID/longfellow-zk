@@ -497,28 +497,28 @@ TEST(HostDecoderTest, Lookup) {
        'm'},
   };
   for (const auto &key : keys) {
-    const CborDoc *got = croot.lookup(mso.data(), key.size(), &key[0], ndx);
-    EXPECT_NE(got, nullptr);
+    auto got = croot.lookup(mso.data(), key.size(), &key[0], ndx);
+    EXPECT_NE(got.key, nullptr);
   }
 
   // Perform a cascading series of lookups
   const uint8_t dki[13] = {'d', 'e', 'v', 'i', 'c', 'e', 'K',
                            'e', 'y', 'I', 'n', 'f', 'o'};
-  const CborDoc *c_dki = croot.lookup(mso.data(), sizeof(dki), dki, ndx);
-  EXPECT_NE(c_dki, nullptr);
+  auto c_dki = croot.lookup(mso.data(), sizeof(dki), dki, ndx);
+  EXPECT_NE(c_dki.key, nullptr);
   EXPECT_EQ(4u, ndx);
 
   const uint8_t dk[9] = {'d', 'e', 'v', 'i', 'c', 'e', 'K', 'e', 'y'};
-  const CborDoc *c_dk = c_dki[1].lookup(mso.data(), sizeof(dk), dk, ndx);
-  EXPECT_NE(c_dk, nullptr);
+  auto c_dk = c_dki.val->lookup(mso.data(), sizeof(dk), dk, ndx);
+  EXPECT_NE(c_dk.key, nullptr);
   EXPECT_EQ(0u, ndx);
 
-  const CborDoc *c_pkx = c_dk[1].lookup_negative(-1, ndx);
-  EXPECT_NE(c_pkx, nullptr);
+  auto c_pkx = c_dk.val->lookup_negative(-1 - (-2), ndx);
+  EXPECT_NE(c_pkx.key, nullptr);
   EXPECT_EQ(2u, ndx);
 
-  const CborDoc *c_00 = c_dk[1].lookup_unsigned(1, ndx);
-  EXPECT_NE(c_00, nullptr);
+  auto c_00 = c_dk.val->lookup_unsigned(1, ndx);
+  EXPECT_NE(c_00.key, nullptr);
   EXPECT_EQ(0u, ndx);
 
   // Perform lookups that should fail
@@ -528,13 +528,75 @@ TEST(HostDecoderTest, Lookup) {
        'm'},
   };
   for (const auto &key : not_keys) {
-    const CborDoc *got = croot.lookup(mso.data(), key.size(), &key[0], ndx);
-    EXPECT_EQ(got, nullptr);
+    auto got = croot.lookup(mso.data(), key.size(), &key[0], ndx);
+    EXPECT_EQ(got.key, nullptr);
   }
-  const CborDoc *ptr = c_dk[1].lookup_negative(-4, ndx);
-  EXPECT_EQ(ptr, nullptr);
-  ptr = c_dk[1].lookup_unsigned(6, ndx);
-  EXPECT_EQ(ptr, nullptr);
+  auto ptr = c_dk.val->lookup_negative(-4, ndx);
+  EXPECT_EQ(ptr.key, nullptr);
+  ptr = c_dk.val->lookup_unsigned(6, ndx);
+  EXPECT_EQ(ptr.key, nullptr);
+}
+
+TEST(HostDecoderTest, Coverage) {
+  // 1. Test position() for UNSIGNED
+  {
+    CborDoc root;
+    std::vector<uint8_t> bytes = {0};  // Unsigned 0
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+    EXPECT_EQ(root.position(), 0);
+  }
+
+  // 2. Test position() for TAG
+  {
+    CborDoc root;
+    // Date tag from existing tests
+    std::vector<uint8_t> bytes = {0xD9, 0x03, 0xEC, 0x6a, '1', '9', '7',
+                                  '1',  '-',  '0',  '9',  '-', '0', '1'};
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+    EXPECT_EQ(root.position(), 4);  // Children string position
+  }
+
+  // 3. Test position() for PRIMITIVE
+  {
+    CborDoc root;
+    std::vector<uint8_t> bytes = {X(7, 20)};  // False
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+    EXPECT_EQ(root.position(), 0);
+  }
+
+  // 4. Test position() death
+  {
+    CborDoc root;
+    std::vector<uint8_t> bytes = {X(4, 0)};  // Empty array
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+#if GTEST_HAS_DEATH_TEST
+    EXPECT_DEATH(root.position(), "position\\(\\) called on unknown type");
+#endif
+  }
+
+  // 5. Test length() for large UNSIGNED
+  {
+    CborDoc root;
+    std::vector<uint8_t> bytes = {X(0, 26), 0x00, 0x01, 0x00, 0x00};  // 65536
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+    EXPECT_EQ(root.length(), 5);
+  }
+
+  // 6. Test length() death
+  {
+    CborDoc root;
+    std::vector<uint8_t> bytes = {X(4, 0)};  // Empty array
+    size_t pos = 0;
+    ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
+#if GTEST_HAS_DEATH_TEST
+    EXPECT_DEATH(root.length(), "length\\(\\) called on non-value type");
+#endif
+  }
 }
 
 }  // namespace

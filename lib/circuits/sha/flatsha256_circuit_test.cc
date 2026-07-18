@@ -58,6 +58,8 @@ namespace {
 using Field = Fp256Base;
 
 constexpr const Field& F = p256_base;
+constexpr size_t kZKRate = 7;
+constexpr size_t kZKQueries = 132;  // 109+ bits of security
 
 // =============================================================================
 // Evaluation tests verify the correctness of circuit construction by
@@ -305,7 +307,7 @@ std::unique_ptr<Circuit<Field>> test_block_circuit_size(const Field& f,
   auto CIRCUIT = Q.mkcircuit(1);
   dump_info(test_name, Q);
 
-  ZkProof<Field> zkpr(*CIRCUIT, 4, 138);
+  ZkProof<Field> zkpr(*CIRCUIT, kZKRate, kZKQueries);
   log(INFO, "SHA: nw:%zd nq:%zd r:%zd w:%zd bl:%zd bl_enc:%zd nrow:%zd\n",
       zkpr.param.nw, zkpr.param.nq, zkpr.param.r, zkpr.param.w,
       zkpr.param.block, zkpr.param.block_enc, zkpr.param.nrow);
@@ -524,7 +526,7 @@ void BM_ShaZK_fp2_128(benchmark::State& state) {
   SecureRandomEngine rng;
 
   for (auto s : state) {
-    ZkProof<f_128> zkpr(*CIRCUIT, 4, 128);
+    ZkProof<f_128> zkpr(*CIRCUIT, kZKRate, kZKQueries);
     ZkProver<f_128, RSFactory> prover(*CIRCUIT, Fs, rsf);
     prover.commit(zkpr, W, tp, rng);
     prover.prove(zkpr, W, tp);
@@ -563,7 +565,7 @@ void BM_ShaZK_Fp64_2(benchmark::State& state) {
   SecureRandomEngine rng;
 
   for (auto s : state) {
-    ZkProof<Field2> zkpr(*CIRCUIT, 4, 138);
+    ZkProof<Field2> zkpr(*CIRCUIT, kZKRate, kZKQueries);
     ZkProver<Field2, RSFactory> prover(*CIRCUIT, base_2, rsf);
     prover.commit(zkpr, W, tp, rng);
     prover.prove(zkpr, W, tp);

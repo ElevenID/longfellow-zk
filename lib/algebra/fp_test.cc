@@ -215,6 +215,22 @@ void reduce(const Field& F) {
 }
 
 template <class Field>
+void accum(const Field& F) {
+  constexpr size_t n = 20;
+
+  typename Field::Elt want{};
+  typename Field::Accum a{};
+
+  for (size_t i = 0; i < n; ++i) {
+    auto x = F.of_scalar(i * i + 3);
+    auto y = F.of_scalar(i + 7);
+    F.mac(a, x, y);
+    F.add(want, F.mulf(x, y));
+  }
+  EXPECT_EQ(F.reduce(a), want);
+}
+
+template <class Field>
 void dot(const Field& F) {
   constexpr size_t n = 20;
   std::vector<Nat<1>> e(n);

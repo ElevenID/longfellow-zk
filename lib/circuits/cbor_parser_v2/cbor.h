@@ -58,6 +58,7 @@ class Cbor {
     EltW encoded_sel;
     CEltW slen_next;
     counters cc_next;
+    CEltW neg_sum_counters;
 
     // In principle we could save witnesses by storing the product of
     // INVPROD_DECODE and INVPROD_PARSE, at the expense of commingling
@@ -78,6 +79,7 @@ class Cbor {
       for (size_t l = 0; l < kNCounters; ++l) {
         pw[i].cc_next[l] = ctr_.input();
       }
+      pw[i].neg_sum_counters = ctr_.input();
       if (i > 0) {
         pw[i].invprod_decode = l_.eltw_input();
         pw[i].invprod_parse = l_.eltw_input();
@@ -112,6 +114,25 @@ class Cbor {
     // if COUNT_IS_NEXT_V8 is TRUE in the last position,
     // then the input is invalid.
     L.assert_implies(ds[n - 1].header, L.lnot(ds[n - 1].bd.count_is_next_v8));
+
+    // -------------------------------------------------------------
+    // For each position, check that all counters are well formed.
+    // They are well formed if they sum to CElt(0).  This is trivially
+    // satisfiable in prime fields, but in characteristic-2 this
+    // condition implies that all counters are well formed (i.e., not
+    // F.zero(), which is not in the multiplicative group.)
+    for (size_t i = 0; i < n; ++i) {
+      CEltW total_sum = ctr_.add(0, kNCounters + 2, [&](size_t j) {
+        if (j == 0) {
+          return pw[i].slen_next;
+        } else if (j == 1) {
+          return pw[i].neg_sum_counters;
+        } else {
+          return pw[i].cc_next[j - 2];
+        }
+      });
+      ctr_.assert0(total_sum);
+    }
 
     // -------------------------------------------------------------
     CEltW mone_counter = ctr_.mone();
@@ -401,8 +422,7 @@ class Cbor {
   }
 
   //------------------------------------------------------------
-  // "J is a header containing negative U."  (U >= 0, and
-  // CBOR distinguishes 0 from -0 apparently)
+  // "J is a header containing negative(U)"
   //------------------------------------------------------------
   void assert_negative_at(size_t n, const vindex& j, uint64_t u,
                           const decode ds[/*n*/]) const {
@@ -573,10 +593,25 @@ class Cbor {
         CEltW twoj = ctr_.add(jctr, jctr);
         ctr_.assert_eq(cm, ctr_.add(ck, ctr_.add(twoj, one)));
         ctr_.assert_eq(cm, ctr_.add(cv, ctr_.add(twoj, two)));
+
+        // Assert that k and v are indeed parsed at level + 1 (l).
+        std::vector<BitW> sel(n);
+        for (size_t i = 0; i < n; ++i) {
+          sel[i] = ps[i].sel[l];
+        }
+        BitW sel_k, sel_v;
+        R.shift(k, 1, &sel_k, n, sel.data(), L.bit(0), unroll);
+        R.shift(v, 1, &sel_v, n, sel.data(), L.bit(0), unroll);
+        L.assert1(sel_k);
+        L.assert1(sel_v);
+
       } else {
         // not sure if this is necessary, but all other counters
         // of CM are supposed to be zero.
         ctr_.assert0(cm);
+        // Key counters should be zero, but value counters may be
+        // nested and non-zero.
+        ctr_.assert0(ck);
       }
     }
   }

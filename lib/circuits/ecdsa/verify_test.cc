@@ -445,6 +445,10 @@ TEST(ECDSA, Size) {
 }
 
 // ================ Benchmarks =================================================
+
+constexpr size_t kZKRate = 7;
+constexpr size_t kZKQueries = 132;  // 109+ bits of security
+
 void BM_ECDSASumcheckProver(benchmark::State& state) {
   size_t numSigs = state.range(0);
   std::unique_ptr<Circuit<Fp256Base>> CIRCUIT =
@@ -490,7 +494,7 @@ void BM_ECDSACommit(benchmark::State& state) {
   Transcript tp((uint8_t*)"test", 4);
   SecureRandomEngine rng;
 
-  ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+  ZkProof<Fp256Base> zkpr(*CIRCUIT, kZKRate, kZKQueries);
   ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
   for (auto s : state) {
     prover.commit(zkpr, W, tp, rng);
@@ -528,7 +532,7 @@ void BM_ECDSAZKProver(benchmark::State& state) {
   Transcript tp((uint8_t*)"test", 4);
   SecureRandomEngine rng;
 
-  ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+  ZkProof<Fp256Base> zkpr(*CIRCUIT, kZKRate, kZKQueries);
   ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
   for (auto s : state) {
     prover.commit(zkpr, W, tp, rng);
@@ -567,12 +571,13 @@ void BM_ECDSAZKVerifier(benchmark::State& state) {
   Transcript tp((uint8_t *)"verify_test", 11);
   SecureRandomEngine rng;
 
-  ZkProof<Fp256Base> zkpr(*CIRCUIT, 4, 128);
+  ZkProof<Fp256Base> zkpr(*CIRCUIT, kZKRate, kZKQueries);
   ZkProver<Fp256Base, RSFactory> prover(*CIRCUIT, p256_base, rsf);
   prover.commit(zkpr, W, tp, rng);
   prover.prove(zkpr, W, tp);
 
-  ZkVerifier<Fp256Base, RSFactory> verifier(*CIRCUIT, rsf, 4, 128, p256_base);
+  ZkVerifier<Fp256Base, RSFactory> verifier(*CIRCUIT, rsf, kZKRate, kZKQueries,
+                                            p256_base);
   auto pub = Dense<Fp256Base>(1, CIRCUIT->npub_in);
   fill_input(pub, numSigs, p256_base, false);
   for (auto s : state) {
