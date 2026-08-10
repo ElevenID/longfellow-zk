@@ -1,0 +1,23 @@
+name = "formal_circuits"
+version = "0.1.0"
+defaultTargets = ["ECDSA", "pk_circuit"]
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+path = "../../../lean/mathlib4"
+rev = "v4.31.0"
+
+[[lean_lib]]
+name = "ECDSA"
+srcDir = "circuits"
+globs = ["ECDSA.+"]
+
+[[lean_lib]]
+name = "pk_circuit"
+srcDir = "circuits/tests/ec"
+roots = ["PkCircuit", "PkCircuitPoly"]
