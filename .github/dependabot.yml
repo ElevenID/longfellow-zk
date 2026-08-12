@@ -4,22 +4,34 @@ updates:
     directory: "/docs"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "20:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "gomod"
     directory: "/docs"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "21:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "gomod"
     directory: "/reference/verifier-service/server"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "22:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "23:00"
+      timezone: "America/Denver"
     open-pull-requests-limit: 10
