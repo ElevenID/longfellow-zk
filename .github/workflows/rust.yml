@@ -1,12 +1,8 @@
 name: Rust implementations
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "rust/**"
-      - "docs/specs/rust/**"
-      - ".github/workflows/rust.yml"
+  merge_group:
+    types: [checks_requested]
   pull_request:
     paths:
       - "rust/**"
@@ -17,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rust-${{ github.workflow }}-${{ github.ref }}
+  group: rust-${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
