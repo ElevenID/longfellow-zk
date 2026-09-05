@@ -54,9 +54,11 @@ using MdocSWw = MdocSignatureWitness<P256, Fp256Scalar>;
 
 CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
                                             uint8_t** cb, size_t* clen) try {
-  if (zk_spec == nullptr) {
+  if (zk_spec == nullptr || cb == nullptr || clen == nullptr) {
     return CIRCUIT_GENERATION_NULL_INPUT;
   }
+  *cb = nullptr;
+  *clen = 0;
 
   // Generator only supports the latest version of the ZKSpec for a number of
   // attributes. Return an error if the requested version is not the latest.
@@ -189,6 +191,10 @@ CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
   // Use an aggressive, apriori estimate on the compressed size to avoid
   // wasting memory.
   uint8_t* buf = (uint8_t*)malloc(buf_size);
+  if (buf == nullptr) {
+    log(ERROR, "circuit generation output allocation failed");
+    return CIRCUIT_GENERATION_GENERAL_FAILURE;
+  }
 
   size_t zl = ZSTD_compress(buf, buf_size, src, sz, 16);
   if (ZSTD_isError(zl)) {
