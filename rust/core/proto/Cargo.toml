@@ -10,7 +10,7 @@ workspace = true
 compile-algebra = { path = "../../compile/algebra" }
 core-algebra = { path = "../algebra" }
 util = { path = "../../util" }
-sha2 = { version = "0.10", features = ["asm"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 compile-compiler = { path = "../../compile/compiler" }

@@ -30,7 +30,7 @@ circuits-bit-plucker = { path = "../../../circuits/bit_plucker" }
 compile-logic = { path = "../../../compile/logic", features = ["testonly"] }
 libc = "0.2"
 zstd = "0.13"
-sha2 = { version = "0.10", features = ["asm"] }
+sha2 = "0.10"
 num-bigint = "0.4"
 mdoc-zk-artifacts = { path = "../artifacts" }
 

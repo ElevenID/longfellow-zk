@@ -23,7 +23,7 @@ compile-eval = { path = "../../../compile/eval", optional = true }
 compile-compiler = { path = "../../../compile/compiler" }
 compile-logic = { path = "../../../compile/logic" }
 num-bigint = "0.4"
-sha2 = { version = "0.10", features = ["asm"] }
+sha2 = "0.10"
 
 core-algebra = { path = "../../../core/algebra" }
 runtime-algebra = { path = "../../../runtime/algebra", optional = true }

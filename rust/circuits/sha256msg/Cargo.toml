@@ -31,5 +31,5 @@ testonly = [
 [dev-dependencies]
 compile-compiler = { path = "../../compile/compiler" }
 circuits-sha256msg = { path = "./", features = ["testonly"] }
-sha2 = { version = "0.10", features = ["asm"] }
+sha2 = "0.10"
 hex = "0.4.3"

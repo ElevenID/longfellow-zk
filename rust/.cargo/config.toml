@@ -1,10 +1,8 @@
-[build]
-rustflags = ["-C", "target-cpu=native"]
+# Keep checked-in builds portable. Deployment-specific CPU tuning may be
+# supplied explicitly through RUSTFLAGS after the target fleet is qualified.
 
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
-rustflags = ["-C", "target-feature=+aes,+sha2"]
-rustdocflags = ["-C", "target-feature=+aes,+sha2"]
 
 [target.i686-unknown-linux-gnu]
 linker = "i686-linux-gnu-gcc"
