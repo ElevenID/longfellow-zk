@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(not(target_feature = "aes"))]
-compile_error!("AArch64 builds require ARMv8-A Cryptographic extension (+aes / PMULL). Enable it via target-feature=+aes,+sha2.");
-
 use std::arch::aarch64::*;
 
 #[cfg(all(

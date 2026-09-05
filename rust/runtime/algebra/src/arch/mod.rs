@@ -51,7 +51,10 @@ arch_select! {
     ))] {
         mod x86_64;
     }
-    if #[cfg(target_arch = "aarch64")] {
+    if #[cfg(all(
+        target_arch = "aarch64",
+        target_feature = "aes"
+    ))] {
         mod aarch64;
     }
     if #[cfg(all(
