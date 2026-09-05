@@ -351,6 +351,18 @@ TEST_F(MdocZKTest, bad_arguments) {
                             (uint8_t**)&zkproof, &proof_len, nullptr),
             MDOC_PROVER_NULL_INPUT);
 
+  for (const char* invalid_now : {"x", "2023-11-02T09:00:000Z"}) {
+    EXPECT_EQ(run_mdoc_prover(circuit, sizeof(circuit), mdoc, sizeof(mdoc), pk,
+                              pk, tr, sizeof(tr), attrs, num_attrs, invalid_now,
+                              (uint8_t**)&zkproof, &proof_len, &zk_spec_1),
+              MDOC_PROVER_INVALID_INPUT);
+    EXPECT_EQ(run_mdoc_verifier(circuit, sizeof(circuit), pk, pk, tr,
+                                sizeof(tr), attrs, num_attrs, invalid_now,
+                                zkproof, sizeof(zkproof), kDefaultDocType,
+                                &zk_spec_1),
+              MDOC_VERIFIER_INVALID_INPUT);
+  }
+
   // Invalid pk.
   EXPECT_EQ(run_mdoc_prover(circuit, sizeof(circuit), mdoc, sizeof(mdoc), pk2,
                             pk, tr, sizeof(tr), attrs, num_attrs, now,

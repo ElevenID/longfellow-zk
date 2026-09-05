@@ -116,6 +116,25 @@ static constexpr bool enforce_circuit_id_in_verifier = false;
 
 // =========== Helper methods for the main exported C functions.
 
+bool is_canonical_utc_time(const char* now) {
+  if (strlen(now) != 20 || now[4] != '-' || now[7] != '-' || now[10] != 'T' ||
+      now[13] != ':' || now[16] != ':' || now[19] != 'Z') {
+    return false;
+  }
+  constexpr size_t kDigitIndexes[] = {0, 1, 2, 3, 5, 6, 8,
+                                      9, 11, 12, 14, 15, 17, 18};
+  for (size_t index : kDigitIndexes) {
+    if (now[index] < '0' || now[index] > '9') {
+      return false;
+    }
+  }
+  auto pair = [now](size_t index) {
+    return static_cast<unsigned>((now[index] - '0') * 10 + now[index + 1] - '0');
+  };
+  return pair(5) >= 1 && pair(5) <= 12 && pair(8) >= 1 && pair(8) <= 31 &&
+         pair(11) <= 23 && pair(14) <= 59 && pair(17) <= 59;
+}
+
 // Specialization for filling the mac when using f_128.
 template <>
 void fill_gf2k<f_128, f_128>(const typename f_128::Elt& m,
@@ -410,6 +429,9 @@ MdocProverErrorCode run_mdoc_prover(
       prf == nullptr || proof_len == nullptr || zk_spec == nullptr) {
     return MDOC_PROVER_NULL_INPUT;
   }
+  if (!is_canonical_utc_time(now)) {
+    return MDOC_PROVER_INVALID_INPUT;
+  }
 
   for (size_t i = 0; i < attrs_len; ++i) {
     if (attrs[i].namespace_len > 64 || attrs[i].id_len > 32 ||
@@ -568,6 +590,9 @@ MdocVerifierErrorCode run_mdoc_verifier(
       transcript == nullptr || now == nullptr || attrs == nullptr ||
       zkproof == nullptr || docType == nullptr || zk_spec == nullptr) {
     return MDOC_VERIFIER_NULL_INPUT;
+  }
+  if (!is_canonical_utc_time(now)) {
+    return MDOC_VERIFIER_INVALID_INPUT;
   }
 
   for (size_t i = 0; i < attrs_len; ++i) {
