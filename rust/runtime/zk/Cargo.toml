@@ -10,8 +10,8 @@ workspace = true
 runtime-algebra = { path = "../algebra" }
 runtime-proto = { path = "../proto" }
 runtime-random = { path = "../random", default-features = false }
-runtime-sumcheck = { path = "../sumcheck" }
-runtime-ligero = { path = "../ligero" }
+runtime-sumcheck = { path = "../sumcheck", default-features = false }
+runtime-ligero = { path = "../ligero", default-features = false }
 core-proto = { path = "../../core/proto" }
 core-algebra = { path = "../../core/algebra" }
 [dev-dependencies]
@@ -19,7 +19,7 @@ runtime-random = { path = "../random", features = ["testonly"] }
 
 [features]
 default = ["prover"]
-prover = []
+prover = ["runtime-sumcheck/prover", "runtime-ligero/prover"]
 
 [[test]]
 name = "zk"

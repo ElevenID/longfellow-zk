@@ -11,13 +11,13 @@ util = { path = "../../util" }
 runtime-algebra = { path = "../algebra" }
 runtime-proto = { path = "../proto" }
 runtime-random = { path = "../random", default-features = false }
-runtime-merkle = { path = "../merkle" }
+runtime-merkle = { path = "../merkle", default-features = false }
 sha2 = "0.10.8"
 core-algebra = { path = "../../core/algebra" }
 
 [features]
 default = ["prover"]
-prover = []
+prover = ["runtime-merkle/prover"]
 
 [[test]]
 name = "ligero"
