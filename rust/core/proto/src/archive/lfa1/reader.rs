@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 
-use crate::archive::{compute_combined_id, ArchiveEntry, CircuitArchive, LFA_VERSION};
+use crate::archive::{
+    compute_combined_id, ArchiveEntry, CircuitArchive, LFA_VERSION, MAX_ARCHIVE_BYTES,
+};
 
 /// Reads an LFA1 archive from a stream (concatenated "sig" and "hash" LFC1 circuits starting with
 /// version/field byte 1).
@@ -24,8 +26,14 @@ pub fn from_stream_lfa1<R: BufRead>(stream: &mut R) -> Result<CircuitArchive, St
 
     let mut raw_bytes = Vec::new();
     stream
+        .take((MAX_ARCHIVE_BYTES + 1) as u64)
         .read_to_end(&mut raw_bytes)
         .map_err(|e| format!("Failed to read LFA1 stream: {e}"))?;
+    if raw_bytes.len() > MAX_ARCHIVE_BYTES {
+        return Err(format!(
+            "Circuit archive exceeds {MAX_ARCHIVE_BYTES} byte limit"
+        ));
+    }
 
     if raw_bytes.is_empty() || raw_bytes[0] != 1 {
         return Err(format!(

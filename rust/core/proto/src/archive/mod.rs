@@ -21,6 +21,12 @@ pub use lfa2::LFA2_MAGIC;
 use sha2::{Digest, Sha256};
 
 pub const LFA_VERSION: u8 = 1;
+/// Maximum decompressed archive size accepted from an untrusted source.
+pub const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum payload size for any one circuit archive entry.
+pub const MAX_ENTRY_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum compressed archive size accepted by the mdoc runtime.
+pub const MAX_COMPRESSED_ARCHIVE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveEntry {
@@ -161,8 +167,17 @@ impl CircuitArchive {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() > MAX_ARCHIVE_BYTES {
+            return Err(format!(
+                "Circuit archive exceeds {MAX_ARCHIVE_BYTES} byte limit"
+            ));
+        }
         let mut cursor = bytes;
-        Self::from_stream(&mut cursor)
+        let archive = Self::from_stream(&mut cursor)?;
+        if !cursor.is_empty() {
+            return Err("Trailing data after circuit archive".to_string());
+        }
+        Ok(archive)
     }
 
     pub fn from_stream<R: BufRead>(stream: &mut R) -> Result<Self, String> {

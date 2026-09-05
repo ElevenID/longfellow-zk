@@ -23,6 +23,22 @@ pub struct MdocProofGeometry {
     pub geom_sig: ZkProofGeometry,
 }
 
+#[cfg(test)]
+mod decompression_limits_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zstd_bomb_beyond_decompressed_limit() {
+        let expanded = vec![0u8; core_proto::archive::MAX_ARCHIVE_BYTES + 1];
+        let compressed = zstd::encode_all(expanded.as_slice(), 1).unwrap();
+        let p256 = runtime_algebra::p256::P256Field::new();
+        let gf2 = runtime_algebra::gf2_128::Gf2_128Field::new();
+
+        let error = decompress_circuits(&compressed, &[0; 32], &p256, &gf2).unwrap_err();
+        assert!(error.contains("Decompressed circuit archive exceeds"));
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MdocProof<F1: SerializableField, F2: SerializableField> {
     pub macs: [u128; 6],
@@ -93,7 +109,7 @@ impl<F1: RuntimeField<2> + SerializableField, F2: RuntimeField<4> + Serializable
     }
 }
 
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 
 pub fn decompress_circuits(
     compressed: &[u8],
@@ -107,9 +123,26 @@ pub fn decompress_circuits(
     ),
     String,
 > {
+    if compressed.len() > core_proto::archive::MAX_COMPRESSED_ARCHIVE_BYTES {
+        return Err(format!(
+            "Compressed circuit archive exceeds {} byte limit",
+            core_proto::archive::MAX_COMPRESSED_ARCHIVE_BYTES
+        ));
+    }
     let zstd_decoder = zstd::stream::read::Decoder::new(compressed)
         .map_err(|e| format!("Failed to initialize zstd decoder: {e}"))?;
-    let mut buf_stream = std::io::BufReader::new(zstd_decoder);
+    let mut decompressed = Vec::new();
+    zstd_decoder
+        .take((core_proto::archive::MAX_ARCHIVE_BYTES + 1) as u64)
+        .read_to_end(&mut decompressed)
+        .map_err(|e| format!("Failed to decompress circuit archive: {e}"))?;
+    if decompressed.len() > core_proto::archive::MAX_ARCHIVE_BYTES {
+        return Err(format!(
+            "Decompressed circuit archive exceeds {} byte limit",
+            core_proto::archive::MAX_ARCHIVE_BYTES
+        ));
+    }
+    let mut buf_stream = std::io::BufReader::new(decompressed.as_slice());
 
     let is_lfa2 = {
         let peek = buf_stream
@@ -120,6 +153,13 @@ pub fn decompress_circuits(
 
     if is_lfa2 {
         let archive = core_proto::archive::CircuitArchive::from_stream(&mut buf_stream)?;
+        if !buf_stream
+            .fill_buf()
+            .map_err(|e| format!("Failed to check circuit archive boundary: {e}"))?
+            .is_empty()
+        {
+            return Err("Trailing data after circuit archive".to_string());
+        }
         if &archive.combined_id != expected_combined_id {
             return Err(
                 "Circuit archive ID does not match the selected ZK specification".to_string(),
