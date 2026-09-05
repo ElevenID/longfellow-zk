@@ -10,7 +10,15 @@ workspace = true
 util = { path = "../../util" }
 runtime-algebra = { path = "../algebra" }
 runtime-proto = { path = "../proto" }
-runtime-random = { path = "../random" }
+runtime-random = { path = "../random", default-features = false }
 runtime-merkle = { path = "../merkle" }
 sha2 = "0.10.8"
 core-algebra = { path = "../../core/algebra" }
+
+[features]
+default = ["prover"]
+prover = []
+
+[[test]]
+name = "ligero"
+required-features = ["prover"]
