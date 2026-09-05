@@ -34,7 +34,8 @@ pub fn run_mdoc_prover(
     now: &str,
     doc_type: &str,
 ) -> Result<Vec<u8>, MdocProverErrorCode> {
-    let mut rng = runtime_random::SecureRandomEngine::new();
+    let mut rng = runtime_random::SecureRandomEngine::try_new()
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
     run_mdoc_prover_inner(
         zk_spec,
         circuits_compressed,
