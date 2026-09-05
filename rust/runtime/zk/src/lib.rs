@@ -15,10 +15,12 @@
 pub(crate) mod circuit_pad;
 pub mod common;
 pub(crate) mod expression;
+#[cfg(feature = "prover")]
 pub mod prover;
 pub mod symbolic_sumcheck_verifier;
 pub mod verifier;
 
+#[cfg(feature = "prover")]
 pub use prover::ZkProver;
 pub use runtime_proto::ZkProof;
 pub use verifier::ZkVerifier;
