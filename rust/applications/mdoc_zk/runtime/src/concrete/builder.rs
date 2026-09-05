@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core_algebra::Nat;
-use mdoc_zk_circuits::{MdocHashRuntimeField, MdocSigRuntimeField};
+use core_algebra::{Nat, SerializableField, SupportsU128Conversions};
+#[cfg(feature = "prover")]
+use core_algebra::AlgebraicField;
+use runtime_algebra::{gf2_128::Gf2_128Field, p256::P256Field};
 
-use crate::config::{
-    K_HASH_V256_BIT_PLUCKER, K_HASH_V8_BIT_PLUCKER, K_SHA_BIT_PLUCKER, K_SIG_MAC_BIT_PLUCKER,
-};
+use crate::config::{K_HASH_V8_BIT_PLUCKER, K_SIG_MAC_BIT_PLUCKER};
+#[cfg(feature = "prover")]
+use crate::config::{K_HASH_V256_BIT_PLUCKER, K_SHA_BIT_PLUCKER};
 
 pub struct AssignmentBuilder<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> {
     pub field: &'a F,
@@ -67,10 +69,12 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
         self.buffer.extend(std::iter::repeat_n(pad_elt, count));
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_ecdsa_given(&mut self, given: &circuits_ecdsa2::concrete::ConcreteGiven<F>) {
         given.push_elements(|elt| self.push_elt(elt));
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_ecdsa_derived(&mut self, derived: &circuits_ecdsa2::concrete::ConcreteDerived<F>) {
         derived.push_elements(|elt| self.push_elt(elt));
     }
@@ -90,9 +94,7 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
                     v |= 1 << j;
                 }
             }
-            elts.push(circuits_bit_plucker::encoding_point::<F, PLUCKER_WIDTH>(
-                self.field, v,
-            ));
+            elts.push(self.field.lookup_point((1 << PLUCKER_WIDTH) + 1, v));
         }
         elts
     }
@@ -108,6 +110,7 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         self.buffer.extend(elts);
     }
 
+    #[cfg(feature = "prover")]
     fn push_nat_plucked<const PLUCKER_WIDTH: usize, const W: usize, N: Nat<W>>(&mut self, nat: &N) {
         let mut bytes = nat.to_bytes_le();
         bytes.resize(W * 8, 0);
@@ -124,6 +127,7 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
         self.buffer.extend(elts);
     }
+    #[cfg(feature = "prover")]
     fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
         let num_chunks = bits.len().div_ceil(PLUCKER_WIDTH);
         let mut elts = Vec::with_capacity(num_chunks);
@@ -140,6 +144,7 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         elts
     }
 
+    #[cfg(feature = "prover")]
     fn push_value_plucked_legacy<const PLUCKER_WIDTH: usize, const BIT_LEN: usize>(
         &mut self,
         val: u128,
@@ -155,15 +160,17 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
     }
 }
 
-impl<F: MdocHashRuntimeField> AssignmentBuilder<'_, F> {
+impl AssignmentBuilder<'_, Gf2_128Field> {
     pub fn push_v8(&mut self, byte: u8) {
         self.push_value_plucked::<{ K_HASH_V8_BIT_PLUCKER }, 8>(u128::from(byte));
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_v32(&mut self, val: u32) {
         self.push_value_plucked::<{ K_SHA_BIT_PLUCKER }, 32>(u128::from(val));
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_v32_legacy(&mut self, val: u32) {
         let mut cur_val = val;
         for _ in 0..8 {
@@ -180,6 +187,7 @@ impl<F: MdocHashRuntimeField> AssignmentBuilder<'_, F> {
         }
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_nat256<N: Nat<4>>(&mut self, nat: &N) {
         self.push_nat_plucked::<{ K_HASH_V256_BIT_PLUCKER }, 4, N>(nat);
     }
@@ -188,12 +196,14 @@ impl<F: MdocHashRuntimeField> AssignmentBuilder<'_, F> {
         self.buffer.push(self.field.u128_to_element(val));
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_sha256_derived(&mut self, derived: &circuits_sha256::concrete::ConcreteDerived) {
         for val in derived.modern_elements() {
             self.push_v32(val);
         }
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_sha256msg_derived(
         &mut self,
         derived: &circuits_sha256msg::concrete::ConcreteDerived,
@@ -204,7 +214,7 @@ impl<F: MdocHashRuntimeField> AssignmentBuilder<'_, F> {
     }
 }
 
-impl<F: MdocSigRuntimeField> AssignmentBuilder<'_, F> {
+impl AssignmentBuilder<'_, P256Field> {
     pub fn push_nat_256_bits<N: Nat<4>>(&mut self, nat: &N) {
         let mut bytes = nat.to_bytes_le();
         bytes.resize(32, 0);
@@ -217,6 +227,7 @@ impl<F: MdocSigRuntimeField> AssignmentBuilder<'_, F> {
         self.push_value_plucked::<{ K_SIG_MAC_BIT_PLUCKER }, 128>(val);
     }
 
+    #[cfg(feature = "prover")]
     pub fn push_plucked_128_legacy(&mut self, val: u128) {
         self.push_value_plucked_legacy::<{ K_SIG_MAC_BIT_PLUCKER }, 128>(val);
     }

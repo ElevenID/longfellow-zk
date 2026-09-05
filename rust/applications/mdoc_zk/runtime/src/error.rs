@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // Return codes for the run_mdoc_prover method.
+#[cfg(feature = "prover")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MdocProverErrorCode {
     Success = 0,

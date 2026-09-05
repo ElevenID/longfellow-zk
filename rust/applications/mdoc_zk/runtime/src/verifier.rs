@@ -181,7 +181,7 @@ pub fn run_mdoc_verifier_inner(
     let pk_y_elt =
         parse_pk_coordinate(pky, &p256).map_err(|_| MdocVerifierErrorCode::InvalidInput)?;
 
-    let digest = mdoc_zk_circuits::cbor::mdoc::compute_transcript_hash(transcript, doc_type);
+    let digest = mdoc_zk_circuits::cbor::transcript::compute_transcript_hash(transcript, doc_type);
     let e2_val = runtime_algebra::RuntimeNat::<4>::from_bytes_be(&digest);
 
     let pub_inputs_sig = push_input_sig(

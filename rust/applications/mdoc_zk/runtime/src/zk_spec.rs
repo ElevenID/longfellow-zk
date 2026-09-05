@@ -44,7 +44,7 @@ impl ZkSpecStruct {
     }
 }
 
-pub use mdoc_zk_circuits::CURRENT_VERSION;
+pub const CURRENT_VERSION: usize = 8;
 
 pub const NUM_ZK_SPECS: usize = 12;
 

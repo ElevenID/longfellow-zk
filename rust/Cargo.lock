@@ -830,8 +830,6 @@ dependencies = [
 name = "mdoc-zk-runtime"
 version = "0.1.0"
 dependencies = [
- "circuits-analog-adder",
- "circuits-bit-plucker",
  "circuits-bitvec",
  "circuits-ec",
  "circuits-ecdsa2",
@@ -844,7 +842,6 @@ dependencies = [
  "core-algebra",
  "core-proto",
  "criterion",
- "libc",
  "mdoc-zk-artifacts",
  "mdoc-zk-circuits",
  "mdoc-zk-compile",

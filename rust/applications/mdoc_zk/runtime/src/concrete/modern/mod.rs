@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "prover")]
 pub(crate) mod private;
 pub(crate) mod public;
 
+#[cfg(feature = "prover")]
 pub(crate) use private::{push_witness_hash, push_witness_sig};
 pub(crate) use public::{push_modern_input_hash, push_modern_input_sig};

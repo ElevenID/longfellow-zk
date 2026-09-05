@@ -32,6 +32,7 @@ pub struct MdocProof<F1: SerializableField, F2: SerializableField> {
 impl<F1: RuntimeField<2> + SerializableField, F2: RuntimeField<4> + SerializableField>
     MdocProof<F1, F2>
 {
+    #[cfg(feature = "prover")]
     pub fn write<SF1: Subfield<E = ElementOf<F1>>, SF2: Subfield<E = ElementOf<F2>>>(
         &self,
         geom: &MdocProofGeometry,
