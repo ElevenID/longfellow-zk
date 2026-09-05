@@ -37,6 +37,16 @@ mod decompression_limits_tests {
         let error = decompress_circuits(&compressed, &[0; 32], &p256, &gf2).unwrap_err();
         assert!(error.contains("Decompressed circuit archive exceeds"));
     }
+
+    #[test]
+    fn rejects_compressed_archive_over_limit_before_decoding() {
+        let compressed = vec![0u8; core_proto::archive::MAX_COMPRESSED_ARCHIVE_BYTES + 1];
+        let p256 = runtime_algebra::p256::P256Field::new();
+        let gf2 = runtime_algebra::gf2_128::Gf2_128Field::new();
+
+        let error = decompress_circuits(&compressed, &[0; 32], &p256, &gf2).unwrap_err();
+        assert!(error.contains("Compressed circuit archive exceeds"));
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

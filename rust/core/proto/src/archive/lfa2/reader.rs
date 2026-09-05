@@ -47,6 +47,21 @@ pub fn from_stream_lfa2_body<R: BufRead>(stream: &mut R) -> Result<CircuitArchiv
     let generator_tool = read_utf8_string(stream, 4096, "generator_tool")?;
     let description = read_utf8_string(stream, 65536, "description")?;
 
+    // Count a conservative upper bound for the bytes already consumed. Each
+    // ULEB128 field is charged its maximum encoded width so this bound cannot
+    // undercount direct stream callers.
+    let mut total_archive_len = 4usize + 1 + 32 + (6 * 8);
+    for len in [
+        created_at.len(),
+        author.len(),
+        generator_tool.len(),
+        description.len(),
+    ] {
+        total_archive_len = total_archive_len
+            .checked_add(len)
+            .ok_or_else(|| "Circuit archive length overflow".to_string())?;
+    }
+
     let num_entries = read_uleb128(stream)?;
     if num_entries > 10_000 {
         return Err(format!("Excessive circuit count in archive: {num_entries}"));
@@ -76,6 +91,15 @@ pub fn from_stream_lfa2_body<R: BufRead>(stream: &mut R) -> Result<CircuitArchiv
         if total_payload_len > MAX_ARCHIVE_BYTES {
             return Err(format!(
                 "Circuit archive payloads exceed {MAX_ARCHIVE_BYTES} byte limit"
+            ));
+        }
+        total_archive_len = total_archive_len
+            .checked_add(8 + name.len() + 32 + 8)
+            .and_then(|len| len.checked_add(payload_len))
+            .ok_or_else(|| "Circuit archive length overflow".to_string())?;
+        if total_archive_len > MAX_ARCHIVE_BYTES {
+            return Err(format!(
+                "Circuit archive exceeds {MAX_ARCHIVE_BYTES} byte limit"
             ));
         }
         metadata.push((name, circuit_id, payload_len));
