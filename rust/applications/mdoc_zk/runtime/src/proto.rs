@@ -15,6 +15,7 @@
 use core_proto::SerializableField;
 use runtime_algebra::{ElementOf, RuntimeField, Subfield};
 use runtime_proto::{ZkProof, ZkProofGeometry};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MdocProofGeometry {
@@ -96,6 +97,7 @@ use std::io::BufRead;
 
 pub fn decompress_circuits(
     compressed: &[u8],
+    expected_combined_id: &[u8; 32],
     p256: &runtime_algebra::p256::P256Field,
     gf2: &runtime_algebra::gf2_128::Gf2_128Field,
 ) -> Result<
@@ -118,26 +120,54 @@ pub fn decompress_circuits(
 
     if is_lfa2 {
         let archive = core_proto::archive::CircuitArchive::from_stream(&mut buf_stream)?;
+        if &archive.combined_id != expected_combined_id {
+            return Err(
+                "Circuit archive ID does not match the selected ZK specification".to_string(),
+            );
+        }
 
         let sig_entry = archive
             .get("sig")
             .ok_or_else(|| "Missing 'sig' entry in circuit archive".to_string())?;
         let reader_sig = core_proto::reader::CircuitReader::new(p256, core_proto::FieldID::P256);
-        let (c_sig, _) = reader_sig.from_bytes(&sig_entry.payload, false)?;
+        let (c_sig, sig_remaining) = reader_sig.from_bytes(&sig_entry.payload, true)?;
+        if !sig_remaining.is_empty() || c_sig.id != sig_entry.circuit_id {
+            return Err("Signature circuit payload does not match its archive entry".to_string());
+        }
 
         let hash_entry = archive
             .get("hash")
             .ok_or_else(|| "Missing 'hash' entry in circuit archive".to_string())?;
         let reader_hash = core_proto::reader::CircuitReader::new(gf2, core_proto::FieldID::Gf2_128);
-        let (c_hash, _) = reader_hash.from_bytes(&hash_entry.payload, false)?;
+        let (c_hash, hash_remaining) = reader_hash.from_bytes(&hash_entry.payload, true)?;
+        if !hash_remaining.is_empty() || c_hash.id != hash_entry.circuit_id {
+            return Err("Hash circuit payload does not match its archive entry".to_string());
+        }
 
         Ok((c_sig, c_hash))
     } else {
         let reader1 = core_proto::reader::CircuitReader::new(p256, core_proto::FieldID::P256);
-        let c_sig = reader1.from_stream(&mut buf_stream, false)?;
+        let c_sig = reader1.from_stream(&mut buf_stream, true)?;
 
         let reader2 = core_proto::reader::CircuitReader::new(gf2, core_proto::FieldID::Gf2_128);
-        let c_hash = reader2.from_stream(&mut buf_stream, false)?;
+        let c_hash = reader2.from_stream(&mut buf_stream, true)?;
+        if !buf_stream
+            .fill_buf()
+            .map_err(|e| format!("Failed to check circuit archive boundary: {e}"))?
+            .is_empty()
+        {
+            return Err("Trailing data after legacy circuit archive".to_string());
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(c_sig.id);
+        hasher.update(c_hash.id);
+        let combined_id: [u8; 32] = hasher.finalize().into();
+        if &combined_id != expected_combined_id {
+            return Err(
+                "Circuit archive ID does not match the selected ZK specification".to_string(),
+            );
+        }
 
         Ok((c_sig, c_hash))
     }

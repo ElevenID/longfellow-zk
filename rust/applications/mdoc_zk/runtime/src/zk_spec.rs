@@ -255,6 +255,7 @@ pub static CURRENT_ZK_SPECS: [ZkSpecStruct; 4] = [
 pub fn find_zk_spec(system_name: &str, combined_hash: &[u8; 32]) -> Option<&'static ZkSpecStruct> {
     ZK_SPECS
         .iter()
+        .chain(CURRENT_ZK_SPECS.iter())
         .find(|spec| spec.system == system_name && &spec.combined_hash == combined_hash)
 }
 
@@ -265,7 +266,13 @@ pub fn find_zk_spec_by_hex(
 ) -> Option<&'static ZkSpecStruct> {
     ZK_SPECS
         .iter()
+        .chain(CURRENT_ZK_SPECS.iter())
         .find(|spec| spec.system == system_name && spec.combined_hash_hex() == combined_hash_hex)
+}
+
+#[must_use]
+pub fn is_registered_zk_spec(zk_spec: &ZkSpecStruct) -> bool {
+    find_zk_spec(zk_spec.system, &zk_spec.combined_hash) == Some(zk_spec)
 }
 
 #[must_use]

@@ -27,6 +27,7 @@ circuits-ec = { path = "../../../circuits/ec", optional = true }
 circuits-ecdsa2 = { path = "../../../circuits/ecdsa2", optional = true }
 compile-logic = { path = "../../../compile/logic", optional = true }
 zstd = { version = "0.13", optional = true }
+sha2 = { version = "0.10", optional = true }
 mdoc-zk-artifacts = { path = "../artifacts", optional = true }
 
 [features]
@@ -43,6 +44,7 @@ verifier = [
     "dep:mdoc-zk-circuits",
     "mdoc-zk-circuits/verifier-support",
     "dep:zstd",
+    "dep:sha2",
 ]
 prover = [
     "verifier",
@@ -91,7 +93,6 @@ mdoc-zk-runtime = { path = "./", features = ["testonly"] }
 mdoc-zk-testcases = { path = "../testcases" }
 runtime-random = { path = "../../../runtime/random", features = ["testonly"] }
 criterion = "0.5"
-sha2 = "0.10"
 num-bigint = "0.4"
 
 [[bench]]

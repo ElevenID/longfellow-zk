@@ -60,7 +60,7 @@ mod tests {
             let provided = provider::materialize(version, nattrs).expect("Failed to materialize");
             let spec = &provided.spec;
             let compressed = &provided.compressed;
-            let (c_sig, c_hash) = decompress_circuits(compressed, &p256, &gf2)
+            let (c_sig, c_hash) = decompress_circuits(compressed, &spec.combined_hash, &p256, &gf2)
                 .expect("Failed to decompress circuits");
             println!(
                 "Circuit {} (v{}, {} attrs): sig_npub = {}, hash_npub = {}",
@@ -96,6 +96,68 @@ mod tests {
                 "Overall circuit hash mismatch for spec {spec:?}"
             );
         }
+    }
+
+    #[test]
+    fn rejects_archive_for_a_different_registered_spec() {
+        let provided = provider::materialize(7, 1).expect("Failed to materialize");
+        let other = provider::materialize(7, 2).expect("Failed to materialize");
+        let p256 = runtime_algebra::p256::P256Field::new();
+        let gf2 = runtime_algebra::gf2_128::Gf2_128Field::new();
+
+        let error =
+            decompress_circuits(&provided.compressed, &other.spec.combined_hash, &p256, &gf2)
+                .expect_err("an archive must be bound to the selected specification");
+
+        assert!(
+            error.contains("does not match"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn rejects_tampered_circuit_payload() {
+        let provided = provider::materialize(7, 1).expect("Failed to materialize");
+        let mut archive = provided.archive;
+        let sig = archive
+            .entries
+            .iter_mut()
+            .find(|entry| entry.name == "sig")
+            .expect("signature circuit");
+        let last = sig.payload.last_mut().expect("non-empty circuit payload");
+        *last ^= 1;
+        let compressed = zstd::encode_all(
+            &archive.to_bytes_lfa2()[..],
+            mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+        )
+        .expect("compress tampered archive");
+        let p256 = runtime_algebra::p256::P256Field::new();
+        let gf2 = runtime_algebra::gf2_128::Gf2_128Field::new();
+
+        decompress_circuits(&compressed, &provided.spec.combined_hash, &p256, &gf2)
+            .expect_err("a modified circuit payload must fail its embedded circuit ID check");
+    }
+
+    #[test]
+    fn rejects_modified_registered_spec_parameters() {
+        let provided = provider::materialize(7, 1).expect("Failed to materialize");
+        let mut modified = provided.spec;
+        modified.ligero_hash.nreq += 1;
+
+        let error = run_mdoc_verifier_inner(
+            &modified,
+            &provided.compressed,
+            "",
+            "",
+            b"",
+            &[],
+            "",
+            "",
+            &[],
+        )
+        .expect_err("a modified registry specification must not be accepted");
+
+        assert_eq!(error, MdocVerifierErrorCode::InvalidZkSpecVersion);
     }
 
     #[test]
