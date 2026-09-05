@@ -648,8 +648,7 @@ MdocVerifierErrorCode run_mdoc_verifier(
       pr_hash.param.block, pr_hash.param.nrow, pr_sig.param.block,
       pr_sig.param.nrow);
 
-  const std::vector<uint8_t> zbuf(zkproof, zkproof + proof_len);
-  ReadBuffer rb(zbuf);
+  ReadBuffer rb(zkproof, proof_len);
 
   // Read macs from proof string.
   // The sanity check above ensures that the proof is big enough for the MACs.
