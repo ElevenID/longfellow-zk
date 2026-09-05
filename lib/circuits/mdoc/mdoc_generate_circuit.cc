@@ -18,7 +18,9 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <memory>
+#include <new>
 #include <vector>
 
 #include "circuits/compiler/circuit_dump.h"
@@ -51,7 +53,7 @@ API version that uses 2 circuits over different fields.
 using MdocSWw = MdocSignatureWitness<P256, Fp256Scalar>;
 
 CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
-                                            uint8_t** cb, size_t* clen) {
+                                            uint8_t** cb, size_t* clen) try {
   if (zk_spec == nullptr) {
     return CIRCUIT_GENERATION_NULL_INPUT;
   }
@@ -199,6 +201,33 @@ CircuitGenerationErrorCode generate_circuit(const ZkSpecStruct* zk_spec,
   *cb = buf;
 
   return CIRCUIT_GENERATION_SUCCESS;
+} catch (const std::bad_alloc&) {
+  if (cb != nullptr) {
+    *cb = nullptr;
+  }
+  if (clen != nullptr) {
+    *clen = 0;
+  }
+  log(ERROR, "circuit generation allocation failed");
+  return CIRCUIT_GENERATION_GENERAL_FAILURE;
+} catch (const std::exception& error) {
+  if (cb != nullptr) {
+    *cb = nullptr;
+  }
+  if (clen != nullptr) {
+    *clen = 0;
+  }
+  log(ERROR, "circuit generation failed: %s", error.what());
+  return CIRCUIT_GENERATION_GENERAL_FAILURE;
+} catch (...) {
+  if (cb != nullptr) {
+    *cb = nullptr;
+  }
+  if (clen != nullptr) {
+    *clen = 0;
+  }
+  log(ERROR, "circuit generation failed with an unknown exception");
+  return CIRCUIT_GENERATION_GENERAL_FAILURE;
 }
 
 } /* extern "C" */
