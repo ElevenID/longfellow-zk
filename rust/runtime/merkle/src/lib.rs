@@ -17,7 +17,9 @@ pub mod heap;
 
 use std::fmt;
 
-pub use commitment::{commit, open, verify, MerkleCommitment};
+#[cfg(feature = "prover")]
+pub use commitment::{commit, open, MerkleCommitment};
+pub use commitment::verify;
 pub use heap::{merkle_heap_len, verify_proof, MerkleHeap};
 pub use runtime_proto::{Digest, MerkleNonce, MerkleProof};
 

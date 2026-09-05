@@ -8,5 +8,13 @@ workspace = true
 
 [dependencies]
 runtime-proto = { path = "../proto" }
-runtime-random = { path = "../random" }
+runtime-random = { path = "../random", optional = true }
 sha2 = "0.10.8"
+
+[features]
+default = ["prover"]
+prover = ["dep:runtime-random"]
+
+[[test]]
+name = "merkle"
+required-features = ["prover"]
