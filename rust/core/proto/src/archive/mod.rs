@@ -174,7 +174,14 @@ impl CircuitArchive {
             stream.consume(4);
             lfa2::reader::from_stream_lfa2_body(stream)
         } else if !buf.is_empty() && buf[0] == 1 {
-            lfa1::reader::from_stream_lfa1(stream)
+            #[cfg(feature = "legacy-lfa1")]
+            {
+                lfa1::reader::from_stream_lfa1(stream)
+            }
+            #[cfg(not(feature = "legacy-lfa1"))]
+            {
+                Err("LFA1 archive support is disabled in this build".to_string())
+            }
         } else {
             Err(format!(
                 "Unsupported archive header: expected b\"LFA2\" magic or 0x01 (LFA1), got {:?}",
