@@ -21,24 +21,13 @@ use crate::{
     poly::{Poly, QuadRoundPoly, QuadWirePoly},
     proof::{LayerProof, SumcheckProof, MAX_LOGW},
     transcript::TranscriptSumcheck,
+    SumcheckProofAux,
 };
 
 struct Bindings<const W: usize, F: InterpolationField<W>> {
     logv: usize,
     nv: usize,
     challenges: [Vec<ElementOf<F>>; 2],
-}
-
-pub struct SumcheckProofAux<const W: usize, F: InterpolationField<W>> {
-    pub bound_quad: Vec<ElementOf<F>>,
-}
-
-impl<const W: usize, F: InterpolationField<W>> SumcheckProofAux<W, F> {
-    pub fn new(num_layers: usize, f: &F) -> Self {
-        Self {
-            bound_quad: vec![f.zero(); num_layers],
-        }
-    }
 }
 
 pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
