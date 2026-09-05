@@ -10,7 +10,7 @@ workspace = true
 runtime-algebra = { path = "../algebra" }
 runtime-proto = { path = "../proto" }
 runtime-random = { path = "../random", default-features = false }
-core-proto = { path = "../../core/proto" }
+core-proto = { path = "../../core/proto", default-features = false }
 core-algebra = { path = "../../core/algebra" }
 
 [features]

@@ -7,7 +7,7 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-core-proto = { path = "../../../core/proto", optional = true }
+core-proto = { path = "../../../core/proto", default-features = false, optional = true }
 core-algebra = { path = "../../../core/algebra", optional = true }
 runtime-proto = { path = "../../../runtime/proto", optional = true }
 runtime-algebra = { path = "../../../runtime/algebra", optional = true }
@@ -64,6 +64,7 @@ prover = [
 ]
 circuit-provider = [
     "prover",
+    "core-proto/legacy-lfa1",
     "dep:compile-compiler",
     "dep:compile-algebra",
     "dep:mdoc-zk-compile",
