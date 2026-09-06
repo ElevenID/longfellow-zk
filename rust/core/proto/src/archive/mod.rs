@@ -27,10 +27,10 @@ pub const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_ENTRY_BYTES: usize = 8 * 1024 * 1024;
 /// Maximum compressed archive size accepted by the mdoc runtime.
 ///
-/// Keep this aligned with the decompressed ceiling so legitimate current
-/// circuits are admitted while the bounded decoder still rejects expansion
-/// beyond [`MAX_ARCHIVE_BYTES`].
-pub const MAX_COMPRESSED_ARCHIVE_BYTES: usize = MAX_ARCHIVE_BYTES;
+/// Includes zstd's worst-case compression overhead for an input at the
+/// decompressed ceiling. The decoder still rejects expansion beyond
+/// [`MAX_ARCHIVE_BYTES`].
+pub const MAX_COMPRESSED_ARCHIVE_BYTES: usize = MAX_ARCHIVE_BYTES + (MAX_ARCHIVE_BYTES >> 8);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveEntry {

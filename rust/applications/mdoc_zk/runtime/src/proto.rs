@@ -28,6 +28,14 @@ mod decompression_limits_tests {
     use super::*;
 
     #[test]
+    fn compressed_limit_covers_zstd_worst_case_overhead() {
+        assert!(
+            core_proto::archive::MAX_COMPRESSED_ARCHIVE_BYTES
+                >= zstd::zstd_safe::compress_bound(core_proto::archive::MAX_ARCHIVE_BYTES)
+        );
+    }
+
+    #[test]
     fn rejects_zstd_bomb_beyond_decompressed_limit() {
         let expanded = vec![0u8; core_proto::archive::MAX_ARCHIVE_BYTES + 1];
         let compressed = zstd::encode_all(expanded.as_slice(), 1).unwrap();
