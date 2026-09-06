@@ -18,16 +18,21 @@ pub(crate) mod modern;
 
 use core_algebra::Nat;
 use legacy::{push_legacy_input_hash, push_legacy_input_sig};
+#[cfg(feature = "prover")]
 use mdoc_zk_circuits::cbor::mdoc::ParsedMdoc;
 use modern::{push_modern_input_hash, push_modern_input_sig};
 use runtime_algebra::{
     gf2_128::{Gf2_128, Gf2_128Field},
     p256::{P256Element, P256Field},
-    secp256r1::Secp256r1,
 };
+#[cfg(feature = "prover")]
+use runtime_algebra::secp256r1::Secp256r1;
 
-use crate::{attribute::RequestedAttribute, error::MdocProverErrorCode};
+use crate::attribute::RequestedAttribute;
+#[cfg(feature = "prover")]
+use crate::error::MdocProverErrorCode;
 
+#[cfg(feature = "prover")]
 pub fn push_witness_hash<N: Nat<4>>(
     version: usize,
     gf2: &Gf2_128Field,
@@ -42,6 +47,7 @@ pub fn push_witness_hash<N: Nat<4>>(
     }
 }
 
+#[cfg(feature = "prover")]
 pub fn push_witness_sig(
     version: usize,
     p256: &P256Field,

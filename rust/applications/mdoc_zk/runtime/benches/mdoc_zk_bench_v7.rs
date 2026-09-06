@@ -135,8 +135,13 @@ fn bench_mdoc_zk_flow(c: &mut Criterion) {
         FftInterpolatorFactory::new(&p256_runtime, &p256_2, omega, omega_order);
 
     {
-        let (c_sig, c_hash) =
-            decompress_circuits(&circuits_v1, &p256_runtime, &gf2_runtime).unwrap();
+        let (c_sig, c_hash) = decompress_circuits(
+            &circuits_v1,
+            &spec.combined_hash,
+            &p256_runtime,
+            &gf2_runtime,
+        )
+        .unwrap();
 
         println!("--------------------------------------------------");
         println!("Circuit Stats (v7 Official Circuit):");

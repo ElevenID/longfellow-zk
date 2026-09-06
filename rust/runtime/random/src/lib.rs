@@ -103,7 +103,9 @@ pub trait RandomEngine {
     }
 }
 
+#[cfg(feature = "secure-random")]
 pub mod secure;
+#[cfg(feature = "secure-random")]
 pub use secure::SecureRandomEngine;
 
 #[cfg(feature = "testonly")]

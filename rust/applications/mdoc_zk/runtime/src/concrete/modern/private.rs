@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core_algebra::{Curve, Nat};
+use core_algebra::{Nat, SupportsNatConversions};
 use mdoc_zk_circuits::cbor::mdoc::ParsedMdoc;
 use runtime_algebra::{
-    field::RuntimeField,
     gf2_128::{Gf2_128, Gf2_128Field},
-    p256::P256Element,
+    p256::{P256Element, P256Field},
+    secp256r1::Secp256r1,
+    Q256Field, RuntimeNat,
 };
 
 use crate::{
@@ -147,21 +148,20 @@ fn push_witness_attrs<N: Nat<4>>(
     Ok(())
 }
 
-pub fn push_witness_sig<F, Fn, C>(
-    runtime_field: &F,
-    q256: &Fn,
-    secp256r1: &C,
-    issuer_pk: &(F::E, F::E),
-    parsed: &ParsedMdoc<F::N>,
+pub fn push_witness_sig(
+    runtime_field: &P256Field,
+    q256: &Q256Field,
+    secp256r1: &Secp256r1<P256Field>,
+    issuer_pk: &(P256Element, P256Element),
+    parsed: &ParsedMdoc<RuntimeNat<4>>,
     mac_ap: &[[u128; 2]; 3],
-) -> Result<Vec<F::E>, String>
-where
-    F: mdoc_zk_circuits::MdocSigRuntimeField<E = P256Element>,
-    Fn: RuntimeField<4> + core_algebra::SupportsNatConversions<4, N = F::N>,
-    C: Curve<4, F = F, N = F::N>,
-    F::N: Nat<4>,
-{
-    let issuer_sig_given = circuits_ecdsa2::concrete::given::<4, F, Fn, C>(
+) -> Result<Vec<P256Element>, String> {
+    let issuer_sig_given = circuits_ecdsa2::concrete::given::<
+        4,
+        P256Field,
+        Q256Field,
+        Secp256r1<P256Field>,
+    >(
         secp256r1,
         &(issuer_pk.0, issuer_pk.1),
         &parsed.issuer_sig_digest,
@@ -180,7 +180,12 @@ where
         q256,
     );
 
-    let device_sig_given = circuits_ecdsa2::concrete::given::<4, F, Fn, C>(
+    let device_sig_given = circuits_ecdsa2::concrete::given::<
+        4,
+        P256Field,
+        Q256Field,
+        Secp256r1<P256Field>,
+    >(
         secp256r1,
         &(
             runtime_field.reduce_nat(&parsed.device_pk.0),

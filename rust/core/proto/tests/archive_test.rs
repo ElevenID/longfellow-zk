@@ -15,6 +15,47 @@
 use core_proto::archive::{CircuitArchive, CircuitArchiveBuilder, LFA2_MAGIC};
 
 #[test]
+fn test_lfa2_rejects_oversized_declared_payload_before_allocation() {
+    let mut bytes = LFA2_MAGIC.to_vec();
+    bytes.push(1);
+    core_proto::uleb::serialize_uleb128(&mut bytes, 0);
+    bytes.extend_from_slice(&[0; 32]);
+    for _ in 0..4 {
+        core_proto::uleb::serialize_uleb128(&mut bytes, 0);
+    }
+    core_proto::uleb::serialize_uleb128(&mut bytes, 1);
+    core_proto::uleb::serialize_uleb128(&mut bytes, 1);
+    bytes.push(b'x');
+    bytes.extend_from_slice(&[0; 32]);
+    core_proto::uleb::serialize_uleb128(&mut bytes, core_proto::archive::MAX_ENTRY_BYTES + 1);
+
+    let error = CircuitArchive::from_bytes(&bytes).unwrap_err();
+    assert!(error.contains("Excessive circuit payload length"));
+}
+
+#[test]
+fn test_lfa2_stream_rejects_cumulative_archive_overflow() {
+    let mut bytes = LFA2_MAGIC.to_vec();
+    bytes.push(1);
+    core_proto::uleb::serialize_uleb128(&mut bytes, 0);
+    bytes.extend_from_slice(&[0; 32]);
+    for _ in 0..4 {
+        core_proto::uleb::serialize_uleb128(&mut bytes, 0);
+    }
+    core_proto::uleb::serialize_uleb128(&mut bytes, 2);
+    for name in [b'a', b'b'] {
+        core_proto::uleb::serialize_uleb128(&mut bytes, 1);
+        bytes.push(name);
+        bytes.extend_from_slice(&[0; 32]);
+        core_proto::uleb::serialize_uleb128(&mut bytes, core_proto::archive::MAX_ENTRY_BYTES);
+    }
+
+    let mut stream = bytes.as_slice();
+    let error = CircuitArchive::from_stream(&mut stream).unwrap_err();
+    assert!(error.contains("Circuit archive exceeds"));
+}
+
+#[test]
 fn test_circuit_archive_lfa2_roundtrip() {
     let id1 = [1u8; 32];
     let payload1 = vec![0x10, 0x20, 0x30];

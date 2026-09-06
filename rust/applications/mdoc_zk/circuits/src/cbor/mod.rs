@@ -14,10 +14,14 @@
 
 pub mod cbor_encode;
 pub mod constants;
+#[cfg(feature = "circuit-compiler")]
 pub mod mdoc;
 pub mod parse;
+#[cfg(feature = "verifier-support")]
+pub mod transcript;
 
 pub use cbor_encode::{
     append_bytes_len, append_text_len, encode_cbor_string, encode_cbor_string_into,
 };
+#[cfg(feature = "testonly")]
 pub mod test_utils;

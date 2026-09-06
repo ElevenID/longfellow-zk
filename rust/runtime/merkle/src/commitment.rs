@@ -12,20 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use runtime_proto::{MerkleNonce, MerkleProof};
+#[cfg(feature = "prover")]
+use runtime_proto::MerkleNonce;
+use runtime_proto::MerkleProof;
+#[cfg(feature = "prover")]
 use runtime_random::RandomEngine;
 use sha2::{Digest as ShaDigest, Sha256};
 
-use super::{
-    heap::{verify_proof, MerkleHeap},
-    Digest, MerkleError,
-};
+#[cfg(feature = "prover")]
+use super::heap::MerkleHeap;
+use super::{heap::verify_proof, Digest, MerkleError};
 
 /// Pure data structure representing the full Merkle commitment state.
 /// It holds:
 /// - `num_leaves`: The total number of leaves (columns) committed to.
 /// - `mh`: The fully built `MerkleHeap` containing leaf and internal node digests.
 /// - `nonce`: The generated `MerkleNonce` salts for all columns/leaves.
+#[cfg(feature = "prover")]
 pub struct MerkleCommitment {
     pub num_leaves: usize,
     pub mh: MerkleHeap,
@@ -41,6 +44,7 @@ pub struct MerkleCommitment {
 /// 4. Inserts the computed leaf digest into the `MerkleHeap`.
 ///
 /// Returns the constructed `MerkleCommitment` and the root `Digest`.
+#[cfg(feature = "prover")]
 pub fn commit<F, R>(
     num_leaves: usize,
     rng: &mut R,
@@ -92,6 +96,7 @@ where
 /// - The nonces at the queried positions.
 /// - The sibling digests path needed to reconstruct the path to the root.
 #[must_use]
+#[cfg(feature = "prover")]
 pub fn open(commitment: &MerkleCommitment, opened_indices: &[usize]) -> MerkleProof {
     let np = opened_indices.len();
     let mut nonce = Vec::with_capacity(np);

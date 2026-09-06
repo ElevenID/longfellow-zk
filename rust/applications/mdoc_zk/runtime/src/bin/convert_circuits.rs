@@ -28,7 +28,9 @@ fn main() {
                 .unwrap_or_else(|e| panic!("Failed to read circuit archive file {path_lfa1}: {e}"))
         });
 
-        let (c_sig, c_hash) = decompress_circuits(&bytes_in, &p256, &gf2).expect("decompress");
+        let expected_id = decode_hex_hash(hash).expect("artifact name must be a SHA-256 digest");
+        let (c_sig, c_hash) =
+            decompress_circuits(&bytes_in, &expected_id, &p256, &gf2).expect("decompress");
 
         let old_sig_deltas = count_unique_deltas(&c_sig.raw.layers);
         let old_hash_deltas = count_unique_deltas(&c_hash.raw.layers);
@@ -96,6 +98,18 @@ fn main() {
             new_hash_deltas
         );
     }
+}
+
+fn decode_hex_hash(value: &str) -> Result<[u8; 32], String> {
+    if value.len() != 64 {
+        return Err("expected 64 hexadecimal characters".to_string());
+    }
+    let mut result = [0u8; 32];
+    for (index, byte) in result.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| "invalid hexadecimal digest".to_string())?;
+    }
+    Ok(result)
 }
 
 fn count_unique_deltas<F: core_proto::SerializableField>(layers: &[core_proto::Layer<F>]) -> usize {

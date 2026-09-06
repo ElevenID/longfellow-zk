@@ -34,7 +34,8 @@ pub fn run_mdoc_prover(
     now: &str,
     doc_type: &str,
 ) -> Result<Vec<u8>, MdocProverErrorCode> {
-    let mut rng = runtime_random::SecureRandomEngine::new();
+    let mut rng = runtime_random::SecureRandomEngine::try_new()
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
     run_mdoc_prover_inner(
         zk_spec,
         circuits_compressed,
@@ -100,8 +101,9 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         runtime_algebra::subfield::BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
     let make_interpolator_hash = Lch14InterpolatorFactory::new(&gf2, &sf_hash);
 
-    let (c_sig, c_hash) = crate::proto::decompress_circuits(circuits_compressed, &p256, &gf2)
-        .map_err(|_| MdocProverErrorCode::CircuitParsingFailure)?;
+    let (c_sig, c_hash) =
+        crate::proto::decompress_circuits(circuits_compressed, &zk_spec.combined_hash, &p256, &gf2)
+            .map_err(|_| MdocProverErrorCode::CircuitParsingFailure)?;
 
     let parsed: ParsedMdoc<runtime_algebra::RuntimeNat<4>> =
         parse_mdoc(mdoc_bytes, transcript, doc_type).map_err(|err| match err {

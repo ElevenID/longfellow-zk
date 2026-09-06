@@ -15,6 +15,7 @@
 pub mod common;
 pub mod geometry;
 pub mod param;
+#[cfg(feature = "prover")]
 pub mod prover;
 pub mod tableau;
 pub mod transcript;
@@ -25,6 +26,7 @@ use std::fmt;
 pub use common::{inner_product_vector, layout_aext_into};
 pub use geometry::{estimate_proof_size, optimize_geometry};
 pub use param::{LigeroConfig, LigeroLinearConstraint, LigeroParam, LigeroQuadraticConstraint};
+#[cfg(feature = "prover")]
 pub use prover::LigeroProver;
 pub use runtime_proto::{LigeroCommitment, LigeroProof};
 pub use transcript::TranscriptLigero;

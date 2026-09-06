@@ -16,7 +16,7 @@ use std::hint::black_box;
 
 use mdoc_zk_runtime::{run_mdoc_prover_inner, RequestedAttribute, CURRENT_ZK_SPECS};
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = black_box(CURRENT_ZK_SPECS[0]);
     let circuits = black_box(&[0u8; 10][..]);
     let mdoc = black_box(&[0u8; 10][..]);
@@ -26,7 +26,8 @@ fn main() {
     let attrs: [RequestedAttribute; 0] = [];
     let now = black_box("2026-07-08");
     let doc_type = black_box("org.iso.18013.5.1.mDL");
-    let mut rng = runtime_random::SecureRandomEngine::new();
+    let mut rng = runtime_random::SecureRandomEngine::try_new()
+        .map_err(|error| std::io::Error::other(format!("OS entropy unavailable: {error}")))?;
 
     let _res = black_box(run_mdoc_prover_inner(
         &spec,
@@ -40,4 +41,5 @@ fn main() {
         doc_type,
         &mut rng,
     ));
+    Ok(())
 }

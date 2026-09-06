@@ -14,23 +14,45 @@
 
 pub mod dense;
 pub mod eq;
+#[cfg(feature = "prover")]
 pub mod eval;
 pub mod hquad;
+#[cfg(feature = "prover")]
 pub mod pad;
 pub mod poly;
 pub use runtime_proto::sumcheck as proof;
+#[cfg(feature = "prover")]
 pub mod prover;
 pub mod transcript;
 pub mod verifier;
 
+#[cfg(feature = "prover")]
 pub use dense::{as_scalar, bind, bind_all, normalize};
 pub use eq::eval as eq;
 pub use hquad::HQuad;
 pub use poly::{LagrangeBasis, Poly, QuadRoundPoly, QuadWirePoly};
 pub use proof::{sane_logw, LayerProof, RoundPoly, SumcheckProof, MAX_LOGW};
-pub use prover::{prove, prove_core, SumcheckProofAux};
+#[cfg(feature = "prover")]
+pub use prover::{prove, prove_core};
 pub use runtime_random::{RandomEngine, Transcript};
 pub use transcript::TranscriptSumcheck;
 pub use verifier::{verify, Claims};
 
+#[cfg(feature = "prover")]
 pub use crate::eval::{eval_circuit, eval_quad};
+
+use core_algebra::ElementOf;
+use runtime_algebra::poly::InterpolationField;
+
+/// Auxiliary sumcheck values consumed by symbolic verification.
+pub struct SumcheckProofAux<const W: usize, F: InterpolationField<W>> {
+    pub bound_quad: Vec<ElementOf<F>>,
+}
+
+impl<const W: usize, F: InterpolationField<W>> SumcheckProofAux<W, F> {
+    pub fn new(num_layers: usize, f: &F) -> Self {
+        Self {
+            bound_quad: vec![f.zero(); num_layers],
+        }
+    }
+}

@@ -12,28 +12,56 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "verifier")]
 pub mod attribute;
+#[cfg(feature = "verifier")]
 pub(crate) mod concrete;
+#[cfg(feature = "verifier")]
 pub mod error;
+#[cfg(feature = "prover")]
 pub(crate) mod mac;
+#[cfg(feature = "verifier")]
 pub mod proto;
+#[cfg(feature = "prover")]
 pub mod prover;
+#[cfg(feature = "circuit-provider")]
 pub mod provider;
+#[cfg(feature = "verifier")]
 pub(crate) mod utils;
+#[cfg(feature = "verifier")]
 pub mod verifier;
+#[cfg(feature = "verifier")]
 pub mod zk_spec;
 
+#[cfg(feature = "verifier")]
 pub use attribute::RequestedAttribute;
-pub use concrete::{push_input_hash, push_input_sig, push_witness_hash, push_witness_sig};
-pub use error::{MdocProverErrorCode, MdocVerifierErrorCode};
+#[cfg(feature = "verifier")]
+pub use concrete::{push_input_hash, push_input_sig};
+#[cfg(feature = "prover")]
+pub use concrete::{push_witness_hash, push_witness_sig};
+#[cfg(feature = "verifier")]
+pub use error::MdocVerifierErrorCode;
+#[cfg(feature = "prover")]
+pub use error::MdocProverErrorCode;
+#[cfg(feature = "prover")]
 pub use mac::{generate_mac_ap, push_macs};
+#[cfg(feature = "verifier")]
 pub use mdoc_zk_circuits as circuits;
+#[cfg(feature = "circuit-provider")]
 pub use mdoc_zk_compile as generate;
+#[cfg(feature = "circuit-provider")]
 pub use mdoc_zk_compile::*;
+#[cfg(feature = "verifier")]
 pub use mdoc_zk_proto::{config, *};
+#[cfg(feature = "verifier")]
 pub use proto::*;
+#[cfg(feature = "prover")]
 pub use prover::*;
+#[cfg(feature = "circuit-provider")]
 pub use provider::*;
+#[cfg(feature = "verifier")]
 pub use utils::{circuit_supports, parse_hex_nat, parse_pk_coordinate, req_attr, same_namespace};
+#[cfg(feature = "verifier")]
 pub use verifier::*;
+#[cfg(feature = "verifier")]
 pub use zk_spec::*;

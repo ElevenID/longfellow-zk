@@ -127,8 +127,8 @@ pub fn cmovne<const N: usize>(
     y: crate::limb::Limb,
     b: &[crate::limb::Limb; N],
 ) {
-    let mask = (x != y) as u64;
-    let mask = (0u64.wrapping_sub(mask)) as crate::limb::Limb;
+    let is_different = (x != y) as u64;
+    let mask = (0u64.wrapping_sub(is_different)) as crate::limb::Limb;
     for i in 0..N {
         a[i] = (a[i] & !mask) | (b[i] & mask);
     }

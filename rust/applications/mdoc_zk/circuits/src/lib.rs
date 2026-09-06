@@ -13,14 +13,25 @@
 // limitations under the License.
 
 pub mod cbor;
+#[cfg(feature = "circuit-compiler")]
 pub mod cbor_decoder;
+#[cfg(feature = "circuit-compiler")]
 pub mod hash;
+#[cfg(feature = "circuit-compiler")]
 pub mod mso_attribute;
+#[cfg(feature = "circuit-compiler")]
 pub mod signature;
+#[cfg(feature = "circuit-compiler")]
 pub mod traits;
 
-pub use cbor::{cbor_encode::*, mdoc::*, test_utils::*};
+pub use cbor::cbor_encode::*;
+#[cfg(feature = "circuit-compiler")]
+pub use cbor::mdoc::*;
+#[cfg(feature = "testonly")]
+pub use cbor::test_utils::*;
+#[cfg(feature = "circuit-compiler")]
 pub use mdoc_zk_proto::*;
+#[cfg(feature = "circuit-compiler")]
 pub use traits::*;
 
 pub const CURRENT_VERSION: usize = 8;

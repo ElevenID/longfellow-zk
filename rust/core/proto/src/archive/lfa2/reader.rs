@@ -15,7 +15,10 @@
 use std::io::BufRead;
 
 use crate::{
-    archive::{compute_combined_id, read_utf8_string, ArchiveEntry, CircuitArchive, LFA_VERSION},
+    archive::{
+        compute_combined_id, read_utf8_string, ArchiveEntry, CircuitArchive, LFA_VERSION,
+        MAX_ARCHIVE_BYTES, MAX_ENTRY_BYTES,
+    },
     uleb::read_uleb128,
 };
 
@@ -44,12 +47,31 @@ pub fn from_stream_lfa2_body<R: BufRead>(stream: &mut R) -> Result<CircuitArchiv
     let generator_tool = read_utf8_string(stream, 4096, "generator_tool")?;
     let description = read_utf8_string(stream, 65536, "description")?;
 
+    // Count a conservative upper bound for the bytes already consumed. Each
+    // ULEB128 field is charged its maximum encoded width so this bound cannot
+    // undercount direct stream callers.
+    let mut total_archive_len = 4usize + 1 + 32 + (6 * 8);
+    for len in [
+        created_at.len(),
+        author.len(),
+        generator_tool.len(),
+        description.len(),
+    ] {
+        total_archive_len = total_archive_len
+            .checked_add(len)
+            .ok_or_else(|| "Circuit archive length overflow".to_string())?;
+    }
+
     let num_entries = read_uleb128(stream)?;
     if num_entries > 10_000 {
         return Err(format!("Excessive circuit count in archive: {num_entries}"));
     }
 
-    let mut metadata = Vec::with_capacity(num_entries);
+    let mut metadata = Vec::new();
+    metadata
+        .try_reserve_exact(num_entries)
+        .map_err(|_| "Unable to allocate circuit archive metadata".to_string())?;
+    let mut total_payload_len = 0usize;
     for _ in 0..num_entries {
         let name = read_utf8_string(stream, 4096, "entry name")?;
         let mut circuit_id = [0u8; 32];
@@ -58,12 +80,41 @@ pub fn from_stream_lfa2_body<R: BufRead>(stream: &mut R) -> Result<CircuitArchiv
             .map_err(|_| "Incomplete entry circuit_id".to_string())?;
 
         let payload_len = read_uleb128(stream)?;
+        if payload_len > MAX_ENTRY_BYTES {
+            return Err(format!(
+                "Excessive circuit payload length: {payload_len} > {MAX_ENTRY_BYTES}"
+            ));
+        }
+        total_payload_len = total_payload_len
+            .checked_add(payload_len)
+            .ok_or_else(|| "Circuit archive payload length overflow".to_string())?;
+        if total_payload_len > MAX_ARCHIVE_BYTES {
+            return Err(format!(
+                "Circuit archive payloads exceed {MAX_ARCHIVE_BYTES} byte limit"
+            ));
+        }
+        total_archive_len = total_archive_len
+            .checked_add(8 + name.len() + 32 + 8)
+            .and_then(|len| len.checked_add(payload_len))
+            .ok_or_else(|| "Circuit archive length overflow".to_string())?;
+        if total_archive_len > MAX_ARCHIVE_BYTES {
+            return Err(format!(
+                "Circuit archive exceeds {MAX_ARCHIVE_BYTES} byte limit"
+            ));
+        }
         metadata.push((name, circuit_id, payload_len));
     }
 
-    let mut entries = Vec::with_capacity(num_entries);
+    let mut entries = Vec::new();
+    entries
+        .try_reserve_exact(num_entries)
+        .map_err(|_| "Unable to allocate circuit archive entries".to_string())?;
     for (name, circuit_id, payload_len) in metadata {
-        let mut payload = vec![0u8; payload_len];
+        let mut payload = Vec::new();
+        payload
+            .try_reserve_exact(payload_len)
+            .map_err(|_| format!("Unable to allocate payload for entry '{name}'"))?;
+        payload.resize(payload_len, 0);
         stream
             .read_exact(&mut payload)
             .map_err(|_| format!("Incomplete payload for entry '{name}'"))?;

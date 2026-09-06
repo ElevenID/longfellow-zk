@@ -21,6 +21,16 @@ pub use lfa2::LFA2_MAGIC;
 use sha2::{Digest, Sha256};
 
 pub const LFA_VERSION: u8 = 1;
+/// Maximum decompressed archive size accepted from an untrusted source.
+pub const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum payload size for any one circuit archive entry.
+pub const MAX_ENTRY_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum compressed archive size accepted by the mdoc runtime.
+///
+/// Includes zstd's worst-case compression overhead for an input at the
+/// decompressed ceiling. The decoder still rejects expansion beyond
+/// [`MAX_ARCHIVE_BYTES`].
+pub const MAX_COMPRESSED_ARCHIVE_BYTES: usize = MAX_ARCHIVE_BYTES + (MAX_ARCHIVE_BYTES >> 8);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveEntry {
@@ -161,8 +171,17 @@ impl CircuitArchive {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() > MAX_ARCHIVE_BYTES {
+            return Err(format!(
+                "Circuit archive exceeds {MAX_ARCHIVE_BYTES} byte limit"
+            ));
+        }
         let mut cursor = bytes;
-        Self::from_stream(&mut cursor)
+        let archive = Self::from_stream(&mut cursor)?;
+        if !cursor.is_empty() {
+            return Err("Trailing data after circuit archive".to_string());
+        }
+        Ok(archive)
     }
 
     pub fn from_stream<R: BufRead>(stream: &mut R) -> Result<Self, String> {
@@ -174,7 +193,14 @@ impl CircuitArchive {
             stream.consume(4);
             lfa2::reader::from_stream_lfa2_body(stream)
         } else if !buf.is_empty() && buf[0] == 1 {
-            lfa1::reader::from_stream_lfa1(stream)
+            #[cfg(feature = "legacy-lfa1")]
+            {
+                lfa1::reader::from_stream_lfa1(stream)
+            }
+            #[cfg(not(feature = "legacy-lfa1"))]
+            {
+                Err("LFA1 archive support is disabled in this build".to_string())
+            }
         } else {
             Err(format!(
                 "Unsupported archive header: expected b\"LFA2\" magic or 0x01 (LFA1), got {:?}",

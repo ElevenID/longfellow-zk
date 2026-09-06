@@ -63,6 +63,9 @@ pub fn run_mdoc_verifier_inner(
     doc_type: &str,
     proof_bytes: &[u8],
 ) -> Result<(), MdocVerifierErrorCode> {
+    if !crate::zk_spec::is_registered_zk_spec(zk_spec) {
+        return Err(MdocVerifierErrorCode::InvalidZkSpecVersion);
+    }
     let version = zk_spec.version;
     let (config_hash, config_sig) = crate::ligero_configs(zk_spec);
     if !crate::is_supported_version(version) {
@@ -99,8 +102,9 @@ pub fn run_mdoc_verifier_inner(
         runtime_algebra::subfield::BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
     let make_interpolator_hash = Lch14InterpolatorFactory::new(&gf2, &sf_hash);
 
-    let (c_sig, c_hash) = crate::proto::decompress_circuits(circuits_compressed, &p256, &gf2)
-        .map_err(|_| MdocVerifierErrorCode::CircuitParsingFailure)?;
+    let (c_sig, c_hash) =
+        crate::proto::decompress_circuits(circuits_compressed, &zk_spec.combined_hash, &p256, &gf2)
+            .map_err(|_| MdocVerifierErrorCode::CircuitParsingFailure)?;
 
     let verifier_hash = ZkVerifier::<2, _>::new(c_hash, config_hash);
     let geom_hash = verifier_hash.geometry(&runtime_zk::common::ZkContext {
@@ -181,7 +185,7 @@ pub fn run_mdoc_verifier_inner(
     let pk_y_elt =
         parse_pk_coordinate(pky, &p256).map_err(|_| MdocVerifierErrorCode::InvalidInput)?;
 
-    let digest = mdoc_zk_circuits::cbor::mdoc::compute_transcript_hash(transcript, doc_type);
+    let digest = mdoc_zk_circuits::cbor::transcript::compute_transcript_hash(transcript, doc_type);
     let e2_val = runtime_algebra::RuntimeNat::<4>::from_bytes_be(&digest);
 
     let pub_inputs_sig = push_input_sig(

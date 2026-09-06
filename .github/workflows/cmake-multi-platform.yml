@@ -48,13 +48,6 @@ jobs:
             cpp_compiler: clang++
             run_tests: false
             install_command: "apt-get update -y && apt-get install -y clang cmake git libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev"
-          - os_name: "Debian 11"
-            os: ubuntu-24.04
-            container_image: "debian:11@sha256:6cb68b1be980a0e5b19be25582b34b5cf9cb466d52d08ab4354b79051f2cd298"
-            cpp_compiler: clang++
-            run_tests: false
-            install_command: "apt-get update -y && apt-get install -y clang cmake git libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev"
-
           - os_name: "Fedora 42"
             os: ubuntu-24.04
             container_image: "fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814"

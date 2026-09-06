@@ -7,11 +7,15 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-sha2 = { version = "0.10.8", features = ["asm"] }
+sha2 = "0.10.8"
 aes = "0.8.4"
-getrandom = "0.3"
+getrandom = { version = "0.3", optional = true }
+rand_chacha = { version = "0.3", optional = true }
+rand_core = { version = "0.6", optional = true }
 runtime-algebra = { path = "../algebra" }
 core-algebra = { path = "../../core/algebra" }
 
 [features]
-testonly = []
+default = ["secure-random"]
+secure-random = ["dep:getrandom", "dep:rand_chacha", "dep:rand_core"]
+testonly = ["secure-random"]

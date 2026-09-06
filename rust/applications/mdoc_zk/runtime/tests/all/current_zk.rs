@@ -981,6 +981,10 @@ fn run_current_circuit_hashes(test_circuits: &TestCircuits) {
             p.spec, *expected_spec,
             "Current spec mismatch for nattrs={nattrs}"
         );
+        assert_eq!(
+            p.archive.combined_id, expected_spec.combined_hash,
+            "Generated circuit ID mismatch for nattrs={nattrs}"
+        );
     }
 }
 

@@ -11,4 +11,4 @@ name = "verifier_only"
 path = "src/main.rs"
 
 [dependencies]
-mdoc-zk-runtime = { path = "../runtime" }
+mdoc-zk-runtime = { path = "../runtime", default-features = false, features = ["verifier"] }

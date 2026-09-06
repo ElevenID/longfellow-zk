@@ -11,5 +11,5 @@ name = "prover_only"
 path = "src/main.rs"
 
 [dependencies]
-mdoc-zk-runtime = { path = "../runtime" }
-runtime-random = { path = "../../../runtime/random" }
+mdoc-zk-runtime = { path = "../runtime", default-features = false, features = ["prover"] }
+runtime-random = { path = "../../../runtime/random", features = ["secure-random"] }
