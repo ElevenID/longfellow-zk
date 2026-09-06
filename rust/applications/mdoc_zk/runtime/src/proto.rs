@@ -17,6 +17,13 @@ use runtime_algebra::{ElementOf, RuntimeField, Subfield};
 use runtime_proto::{ZkProof, ZkProofGeometry};
 use sha2::{Digest, Sha256};
 
+/// Maximum bytes produced while decompressing a circuit bundle.
+///
+/// Legacy concatenated circuit bundles can exceed the stricter LFA2 archive
+/// limit. LFA2 parsing still enforces `core_proto::archive::MAX_ARCHIVE_BYTES`
+/// and the per-entry limits after decompression.
+const MAX_DECOMPRESSED_CIRCUIT_BYTES: usize = 128 * 1024 * 1024;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MdocProofGeometry {
     pub geom_hash: ZkProofGeometry,
@@ -36,14 +43,49 @@ mod decompression_limits_tests {
     }
 
     #[test]
-    fn rejects_zstd_bomb_beyond_decompressed_limit() {
-        let expanded = vec![0u8; core_proto::archive::MAX_ARCHIVE_BYTES + 1];
-        let compressed = zstd::encode_all(expanded.as_slice(), 1).unwrap();
+    fn streams_zstd_bombs_through_decompression_limit() {
+        let mut encoder = zstd::stream::write::Encoder::new(Vec::new(), 1).unwrap();
+        std::io::copy(
+            &mut std::io::repeat(0).take((MAX_DECOMPRESSED_CIRCUIT_BYTES + 1) as u64),
+            &mut encoder,
+        )
+        .unwrap();
+        let compressed = encoder.finish().unwrap();
         let p256 = runtime_algebra::p256::P256Field::new();
         let gf2 = runtime_algebra::gf2_128::Gf2_128Field::new();
 
-        let error = decompress_circuits(&compressed, &[0; 32], &p256, &gf2).unwrap_err();
-        assert!(error.contains("Decompressed circuit archive exceeds"));
+        let parse_error = decompress_circuits(&compressed, &[0; 32], &p256, &gf2).unwrap_err();
+        assert!(
+            parse_error.contains("Unsupported format header"),
+            "{parse_error}"
+        );
+
+        let decoder = zstd::stream::read::Decoder::new(compressed.as_slice()).unwrap();
+        let mut limited =
+            DecompressionLimitReader::new(decoder, MAX_DECOMPRESSED_CIRCUIT_BYTES);
+        let limit_error = std::io::copy(&mut limited, &mut std::io::sink()).unwrap_err();
+        assert!(
+            limit_error
+                .to_string()
+                .contains("Decompressed circuit archive exceeds")
+        );
+    }
+
+    #[cfg(feature = "circuit-provider")]
+    #[test]
+    fn official_legacy_circuits_fit_decompression_limit() {
+        let mut largest = 0;
+        for hash in mdoc_zk_artifacts::all_circuit_hashes() {
+            let compressed = mdoc_zk_artifacts::load_circuit_v1(hash);
+            let decompressed = zstd::decode_all(compressed.as_slice()).unwrap();
+            largest = largest.max(decompressed.len());
+            assert!(
+                decompressed.len() <= MAX_DECOMPRESSED_CIRCUIT_BYTES,
+                "official circuit {hash} expands to {} bytes",
+                decompressed.len()
+            );
+        }
+        println!("largest official legacy circuit bundle: {largest} bytes");
     }
 
     #[test]
@@ -127,7 +169,46 @@ impl<F1: RuntimeField<2> + SerializableField, F2: RuntimeField<4> + Serializable
     }
 }
 
-use std::io::{BufRead, Read};
+use std::io::{self, BufRead, Read};
+
+struct DecompressionLimitReader<R> {
+    inner: R,
+    remaining: usize,
+}
+
+impl<R> DecompressionLimitReader<R> {
+    fn new(inner: R, limit: usize) -> Self {
+        Self {
+            inner,
+            remaining: limit,
+        }
+    }
+}
+
+impl<R: Read> Read for DecompressionLimitReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            let mut overflow = [0u8; 1];
+            return match self.inner.read(&mut overflow)? {
+                0 => Ok(0),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "Decompressed circuit archive exceeds {MAX_DECOMPRESSED_CIRCUIT_BYTES} byte limit"
+                    ),
+                )),
+            };
+        }
+
+        let allowed = self.remaining.min(buf.len());
+        let read = self.inner.read(&mut buf[..allowed])?;
+        self.remaining -= read;
+        Ok(read)
+    }
+}
 
 pub fn decompress_circuits(
     compressed: &[u8],
@@ -149,18 +230,9 @@ pub fn decompress_circuits(
     }
     let zstd_decoder = zstd::stream::read::Decoder::new(compressed)
         .map_err(|e| format!("Failed to initialize zstd decoder: {e}"))?;
-    let mut decompressed = Vec::new();
-    zstd_decoder
-        .take((core_proto::archive::MAX_ARCHIVE_BYTES + 1) as u64)
-        .read_to_end(&mut decompressed)
-        .map_err(|e| format!("Failed to decompress circuit archive: {e}"))?;
-    if decompressed.len() > core_proto::archive::MAX_ARCHIVE_BYTES {
-        return Err(format!(
-            "Decompressed circuit archive exceeds {} byte limit",
-            core_proto::archive::MAX_ARCHIVE_BYTES
-        ));
-    }
-    let mut buf_stream = std::io::BufReader::new(decompressed.as_slice());
+    let limited_decoder =
+        DecompressionLimitReader::new(zstd_decoder, MAX_DECOMPRESSED_CIRCUIT_BYTES);
+    let mut buf_stream = std::io::BufReader::new(limited_decoder);
 
     let is_lfa2 = {
         let peek = buf_stream
