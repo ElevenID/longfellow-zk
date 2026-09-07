@@ -12,25 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use core_algebra::{Nat, SerializableField, SupportsU128Conversions};
 #[cfg(feature = "prover")]
 use core_algebra::AlgebraicField;
+use core_algebra::{Nat, SerializableField, SupportsU128Conversions};
 use runtime_algebra::{gf2_128::Gf2_128Field, p256::P256Field};
+use zeroize::{Zeroize, Zeroizing};
 
-use crate::config::{K_HASH_V8_BIT_PLUCKER, K_SIG_MAC_BIT_PLUCKER};
 #[cfg(feature = "prover")]
 use crate::config::{K_HASH_V256_BIT_PLUCKER, K_SHA_BIT_PLUCKER};
+use crate::config::{K_HASH_V8_BIT_PLUCKER, K_SIG_MAC_BIT_PLUCKER};
 
-pub struct AssignmentBuilder<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> {
+pub struct AssignmentBuilder<'a, F>
+where
+    F: core_algebra::BareField + core_algebra::AlgebraicField,
+    F::E: Zeroize,
+{
     pub field: &'a F,
-    pub(crate) buffer: Vec<F::E>,
+    pub(crate) buffer: Zeroizing<Vec<F::E>>,
 }
 
-impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBuilder<'a, F> {
+impl<'a, F> AssignmentBuilder<'a, F>
+where
+    F: core_algebra::BareField + core_algebra::AlgebraicField,
+    F::E: Zeroize,
+{
     pub fn new(field: &'a F) -> Self {
         Self {
             field,
-            buffer: Vec::new(),
+            buffer: Zeroizing::new(Vec::new()),
         }
     }
 
@@ -38,8 +47,8 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
         self.buffer.push(elt.clone());
     }
 
-    pub fn into_inner(self) -> Vec<F::E> {
-        self.buffer
+    pub fn into_inner(mut self) -> Vec<F::E> {
+        std::mem::take(&mut *self.buffer)
     }
 
     #[inline(always)]
@@ -82,10 +91,15 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
 
 impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::HasLookupPoints>
     AssignmentBuilder<'_, F>
+where
+    F::E: Zeroize,
 {
-    fn pack_bits_to_elements<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
+    fn pack_bits_to_elements<const PLUCKER_WIDTH: usize>(
+        &self,
+        bits: &[bool],
+    ) -> Zeroizing<Vec<F::E>> {
         let num_chunks = bits.len().div_ceil(PLUCKER_WIDTH);
-        let mut elts = Vec::with_capacity(num_chunks);
+        let mut elts = Zeroizing::new(Vec::with_capacity(num_chunks));
         for i in 0..num_chunks {
             let mut v = 0usize;
             for j in 0..PLUCKER_WIDTH {
@@ -100,22 +114,22 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
     }
 
     fn push_value_plucked<const PLUCKER_WIDTH: usize, const BIT_LEN: usize>(&mut self, val: u128) {
-        let mut bits = [false; BIT_LEN];
+        let mut bits = Zeroizing::new([false; BIT_LEN]);
         let mut cur_val = val;
-        for item in &mut bits {
+        for item in bits.iter_mut() {
             *item = (cur_val & 1) != 0;
             cur_val >>= 1;
         }
-        let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
-        self.buffer.extend(elts);
+        let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits[..]);
+        self.buffer.extend(elts.iter().cloned());
     }
 
     #[cfg(feature = "prover")]
     fn push_nat_plucked<const PLUCKER_WIDTH: usize, const W: usize, N: Nat<W>>(&mut self, nat: &N) {
-        let mut bytes = nat.to_bytes_le();
+        let mut bytes = Zeroizing::new(nat.to_bytes_le());
         bytes.resize(W * 8, 0);
 
-        let mut bits = vec![false; W * 64];
+        let mut bits = Zeroizing::new(vec![false; W * 64]);
         for (i, &byte) in bytes.iter().enumerate() {
             let mut cur_byte = byte;
             for k in 0..8 {
@@ -125,12 +139,15 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         }
 
         let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
-        self.buffer.extend(elts);
+        self.buffer.extend(elts.iter().cloned());
     }
     #[cfg(feature = "prover")]
-    fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
+    fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(
+        &self,
+        bits: &[bool],
+    ) -> Zeroizing<Vec<F::E>> {
         let num_chunks = bits.len().div_ceil(PLUCKER_WIDTH);
-        let mut elts = Vec::with_capacity(num_chunks);
+        let mut elts = Zeroizing::new(Vec::with_capacity(num_chunks));
         for i in 0..num_chunks {
             let mut v = 0usize;
             for j in 0..PLUCKER_WIDTH {
@@ -149,14 +166,14 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         &mut self,
         val: u128,
     ) {
-        let mut bits = [false; BIT_LEN];
+        let mut bits = Zeroizing::new([false; BIT_LEN]);
         let mut cur_val = val;
-        for item in &mut bits {
+        for item in bits.iter_mut() {
             *item = (cur_val & 1) != 0;
             cur_val >>= 1;
         }
-        let elts = self.pack_bits_to_elements_legacy::<PLUCKER_WIDTH>(&bits);
-        self.buffer.extend(elts);
+        let elts = self.pack_bits_to_elements_legacy::<PLUCKER_WIDTH>(&bits[..]);
+        self.buffer.extend(elts.iter().cloned());
     }
 }
 
@@ -216,9 +233,9 @@ impl AssignmentBuilder<'_, Gf2_128Field> {
 
 impl AssignmentBuilder<'_, P256Field> {
     pub fn push_nat_256_bits<N: Nat<4>>(&mut self, nat: &N) {
-        let mut bytes = nat.to_bytes_le();
+        let mut bytes = Zeroizing::new(nat.to_bytes_le());
         bytes.resize(32, 0);
-        for &b in &bytes {
+        for &b in bytes.iter() {
             self.push_bits_len(u64::from(b), 8);
         }
     }
@@ -233,7 +250,7 @@ impl AssignmentBuilder<'_, P256Field> {
     }
 
     pub fn push_nat_elt<const W_NAT: usize, N: Nat<W_NAT>>(&mut self, val: &N) {
-        let mut bytes = val.to_bytes_le();
+        let mut bytes = Zeroizing::new(val.to_bytes_le());
         bytes.resize(32, 0);
         let el = self.field.bytes_to_element(&bytes).unwrap();
         self.buffer.push(el);

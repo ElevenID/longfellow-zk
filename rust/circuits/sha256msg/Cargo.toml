@@ -17,6 +17,7 @@ circuits-bit-plucker = { path = "../bit_plucker" }
 circuits-sha256 = { path = "../sha256" }
 circuits-analog-adder = { path = "../analog_adder" }
 runtime-algebra = { path = "../../runtime/algebra", optional = true }
+zeroize = "1.8"
 
 [features]
 testonly = [

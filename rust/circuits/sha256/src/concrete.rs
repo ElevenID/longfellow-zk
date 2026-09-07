@@ -13,14 +13,15 @@
 // limitations under the License.
 
 use super::constants::K;
+use zeroize::Zeroize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroize)]
 pub struct ConcreteGiven {
     pub input_block: [u32; 16],
     pub h0: [u32; 8],
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroize)]
 pub struct ConcreteDerived {
     pub outw: [u32; 48],
     pub oute: [u32; 64],

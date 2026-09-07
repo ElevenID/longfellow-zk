@@ -266,6 +266,7 @@ dependencies = [
  "compile-logic",
  "core-algebra",
  "runtime-algebra",
+ "zeroize",
 ]
 
 [[package]]
@@ -390,6 +391,7 @@ dependencies = [
  "compile-logic",
  "core-algebra",
  "runtime-algebra",
+ "zeroize",
 ]
 
 [[package]]
@@ -410,6 +412,7 @@ dependencies = [
  "hex",
  "runtime-algebra",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]

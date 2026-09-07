@@ -20,6 +20,7 @@ use runtime_algebra::{
     p256::{P256Element, P256Field},
     secp256r1::Secp256r1,
 };
+use zeroize::Zeroizing;
 
 use crate::{
     attribute::RequestedAttribute, concrete::builder::AssignmentBuilder, error::MdocProverErrorCode,
@@ -82,13 +83,18 @@ pub fn push_witness_hash<N: Nat<4>>(
     }
 
     let max_mso_blocks = max_shablocks(version);
-    let mso_sha_in = circuits_sha256msg::concrete::given(
-        &parsed.cbor_mso,
-        &circuits_sha256::constants::INITIAL,
+    let mso_sha_in = Zeroizing::new(
+        circuits_sha256msg::concrete::given(
+            &parsed.cbor_mso,
+            &circuits_sha256::constants::INITIAL,
+            max_mso_blocks,
+        )
+        .unwrap(),
+    );
+    let mso_sha_witness = Zeroizing::new(circuits_sha256msg::concrete::derived(
+        &mso_sha_in,
         max_mso_blocks,
-    )
-    .unwrap();
-    let mso_sha_witness = circuits_sha256msg::concrete::derived(&mso_sha_in, max_mso_blocks);
+    ));
     let signed_bytes = &mso_sha_in.padded_preimage;
     let nblocks = mso_sha_in.nblocks;
 
@@ -127,13 +133,16 @@ fn push_witness_attrs<N: Nat<4>>(
             return Err(MdocProverErrorCode::AttributeTooLong);
         }
 
-        let attr_sha_in = circuits_sha256msg::concrete::given(
-            &pa.cbor_issuer_signed_item,
-            &circuits_sha256::constants::INITIAL,
-            2,
-        )
-        .unwrap();
-        let attr_sha_witness = circuits_sha256msg::concrete::derived(&attr_sha_in, 2);
+        let attr_sha_in = Zeroizing::new(
+            circuits_sha256msg::concrete::given(
+                &pa.cbor_issuer_signed_item,
+                &circuits_sha256::constants::INITIAL,
+                2,
+            )
+            .unwrap(),
+        );
+        let attr_sha_witness =
+            Zeroizing::new(circuits_sha256msg::concrete::derived(&attr_sha_in, 2));
         builder.push_raw_bytes(&attr_sha_in.padded_preimage);
         push_legacy_sha_witness(builder, &attr_sha_witness.sha_derived[0]);
         push_legacy_sha_witness(builder, &attr_sha_witness.sha_derived[1]);
@@ -196,10 +205,24 @@ fn push_legacy_verify_witness_3(
     s: &runtime_algebra::RuntimeNat<4>,
 ) {
     let p256 = builder.field;
-    let ecdsa_given =
-        circuits_ecdsa2::concrete::given(secp256r1, &(*pk_x, *pk_y), e, r, s, p256, q256);
-    let ecdsa_derived =
-        circuits_ecdsa2::concrete::derived(secp256r1, &(*pk_x, *pk_y), e, r, s, p256, q256);
+    let ecdsa_given = Zeroizing::new(circuits_ecdsa2::concrete::given(
+        secp256r1,
+        &(*pk_x, *pk_y),
+        e,
+        r,
+        s,
+        p256,
+        q256,
+    ));
+    let ecdsa_derived = Zeroizing::new(circuits_ecdsa2::concrete::derived(
+        secp256r1,
+        &(*pk_x, *pk_y),
+        e,
+        r,
+        s,
+        p256,
+        q256,
+    ));
 
     builder.push_elt(&ecdsa_given.rxy.0);
     builder.push_elt(&ecdsa_given.rxy.1);

@@ -20,6 +20,7 @@ use runtime_algebra::{
     secp256r1::Secp256r1,
     Q256Field, RuntimeNat,
 };
+use zeroize::Zeroizing;
 
 use crate::{
     attribute::RequestedAttribute, concrete::builder::AssignmentBuilder, config::K_ATTR_LEN_BITS,
@@ -38,22 +39,28 @@ pub fn push_witness_hash<N: Nat<4>>(
     builder.push_nat256(&parsed.issuer_sig_digest);
 
     // 2. preimage (MSO preimage - plucked V8) + preimage.len
-    let mso_sha_in = circuits_sha256msg::concrete::given(
-        &parsed.cbor_mso,
-        &circuits_sha256::constants::INITIAL,
-        mdoc_zk_circuits::hash::constants::K_MAX_SHA_BLOCKS,
-    )
-    .unwrap();
-    let mso_sha_derived = circuits_sha256msg::concrete::derived(
+    let mso_sha_in = Zeroizing::new(
+        circuits_sha256msg::concrete::given(
+            &parsed.cbor_mso,
+            &circuits_sha256::constants::INITIAL,
+            mdoc_zk_circuits::hash::constants::K_MAX_SHA_BLOCKS,
+        )
+        .unwrap(),
+    );
+    let mso_sha_derived = Zeroizing::new(circuits_sha256msg::concrete::derived(
         &mso_sha_in,
         mdoc_zk_circuits::hash::constants::K_MAX_SHA_BLOCKS,
-    );
+    ));
     let signed_bytes = &mso_sha_in.padded_preimage;
     let nblocks = mso_sha_in.nblocks;
-    let preimage_arr: [u8; mdoc_zk_circuits::hash::constants::K_MSO_PREIMAGE_LEN] =
-        signed_bytes.as_slice().try_into().unwrap();
+    let preimage_arr = Zeroizing::new(
+        <[u8; mdoc_zk_circuits::hash::constants::K_MSO_PREIMAGE_LEN]>::try_from(
+            signed_bytes.as_slice(),
+        )
+        .unwrap(),
+    );
 
-    for &b in &preimage_arr {
+    for &b in preimage_arr.iter() {
         builder.push_v8(b);
     }
     builder.push_bits_len(parsed.cbor_mso.len() as u64, 16);
@@ -114,17 +121,24 @@ fn push_witness_attrs<N: Nat<4>>(
         if pa.cbor_issuer_signed_item.len() >= 256 {
             return Err(MdocProverErrorCode::AttributeTooLong);
         }
-        let attr_sha_in = circuits_sha256msg::concrete::given(
-            &pa.cbor_issuer_signed_item,
-            &circuits_sha256::constants::INITIAL,
-            2,
-        )
-        .unwrap();
-        let attr_sha_derived = circuits_sha256msg::concrete::derived(&attr_sha_in, 2);
-        let preimage_arr: [u8; mdoc_zk_circuits::mso_attribute::constants::K_ATTR_PREIMAGE_LEN] =
-            attr_sha_in.padded_preimage.as_slice().try_into().unwrap();
+        let attr_sha_in = Zeroizing::new(
+            circuits_sha256msg::concrete::given(
+                &pa.cbor_issuer_signed_item,
+                &circuits_sha256::constants::INITIAL,
+                2,
+            )
+            .unwrap(),
+        );
+        let attr_sha_derived =
+            Zeroizing::new(circuits_sha256msg::concrete::derived(&attr_sha_in, 2));
+        let preimage_arr = Zeroizing::new(
+            <[u8; mdoc_zk_circuits::mso_attribute::constants::K_ATTR_PREIMAGE_LEN]>::try_from(
+                attr_sha_in.padded_preimage.as_slice(),
+            )
+            .unwrap(),
+        );
 
-        for &b in &preimage_arr {
+        for &b in preimage_arr.iter() {
             builder.push_v8(b);
         }
         builder.push_bits_len(pa.cbor_issuer_signed_item.len() as u64, K_ATTR_LEN_BITS);
@@ -156,7 +170,7 @@ pub fn push_witness_sig(
     parsed: &ParsedMdoc<RuntimeNat<4>>,
     mac_ap: &[[u128; 2]; 3],
 ) -> Result<Vec<P256Element>, String> {
-    let issuer_sig_given = circuits_ecdsa2::concrete::given::<
+    let issuer_sig_given = Zeroizing::new(circuits_ecdsa2::concrete::given::<
         4,
         P256Field,
         Q256Field,
@@ -169,8 +183,8 @@ pub fn push_witness_sig(
         &parsed.issuer_sig_s,
         runtime_field,
         q256,
-    );
-    let issuer_sig_derived = circuits_ecdsa2::concrete::derived(
+    ));
+    let issuer_sig_derived = Zeroizing::new(circuits_ecdsa2::concrete::derived(
         secp256r1,
         &(issuer_pk.0, issuer_pk.1),
         &parsed.issuer_sig_digest,
@@ -178,9 +192,9 @@ pub fn push_witness_sig(
         &parsed.issuer_sig_s,
         runtime_field,
         q256,
-    );
+    ));
 
-    let device_sig_given = circuits_ecdsa2::concrete::given::<
+    let device_sig_given = Zeroizing::new(circuits_ecdsa2::concrete::given::<
         4,
         P256Field,
         Q256Field,
@@ -196,8 +210,8 @@ pub fn push_witness_sig(
         &parsed.device_sig_s,
         runtime_field,
         q256,
-    );
-    let device_sig_derived = circuits_ecdsa2::concrete::derived(
+    ));
+    let device_sig_derived = Zeroizing::new(circuits_ecdsa2::concrete::derived(
         secp256r1,
         &(
             runtime_field.reduce_nat(&parsed.device_pk.0),
@@ -208,7 +222,7 @@ pub fn push_witness_sig(
         &parsed.device_sig_s,
         runtime_field,
         q256,
-    );
+    ));
 
     let mut builder = AssignmentBuilder::new(runtime_field);
 
