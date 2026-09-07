@@ -28,6 +28,7 @@ use crate::{
     field::{RuntimeField, RuntimeSerializableField, SupportsSampling},
     limb::{accum, accum_modular, lt, maybe_minus_m, maybe_plus_m, mul_accum, sub_limb},
     poly::InterpolationField,
+    utility::ZeroizeOnDropRef,
     Limb, RuntimeNat,
 };
 
@@ -604,20 +605,56 @@ impl<const W: usize, const L: usize, const ACCUM_L: usize, Tag, S: MontgomeryStr
     SupportsSampling<W> for FpGenericField<W, L, ACCUM_L, Tag, S>
 {
     fn sample<R: FnMut(usize) -> Vec<u8>>(&self, mut rng: R) -> Self::E {
+        let mut bytes = Vec::new();
+        let mut words = [0u64; W];
+        let mut limbs = [0 as Limb; L];
+        self.sample_with_scratch(&mut rng, &mut bytes, &mut words, &mut limbs, || {})
+    }
+}
+
+impl<const W: usize, const L: usize, const ACCUM_L: usize, Tag, S: MontgomeryStrategy<L>>
+    FpGenericField<W, L, ACCUM_L, Tag, S>
+{
+    fn sample_with_scratch<R, H>(
+        &self,
+        rng: &mut R,
+        bytes: &mut Vec<u8>,
+        words: &mut [u64; W],
+        limbs: &mut [Limb; L],
+        mut after_decode: H,
+    ) -> FpGenericElement<L, Tag>
+    where
+        R: FnMut(usize) -> Vec<u8>,
+        H: FnMut(),
+    {
+        use zeroize::{Zeroize, Zeroizing};
+
+        let mut guarded_bytes = ZeroizeOnDropRef(bytes);
+        let mut guarded_words = ZeroizeOnDropRef(words);
+        let mut guarded_limbs = ZeroizeOnDropRef(limbs);
+        guarded_bytes.zeroize();
+        guarded_bytes.clear();
+        guarded_bytes.reserve_exact(W * 8);
+
         loop {
-            let buf = rng(W * 8);
+            guarded_bytes.zeroize();
+            guarded_bytes.clear();
+            guarded_words.zeroize();
+            guarded_limbs.zeroize();
+            let random = Zeroizing::new(rng(W * 8));
             assert_eq!(
-                buf.len(),
+                random.len(),
                 W * 8,
                 "sampling callback returned an unexpected number of bytes"
             );
-            let mut words = [0u64; W];
-            for (word, chunk) in words.iter_mut().zip(buf.chunks_exact(8)) {
+            guarded_bytes.extend_from_slice(&random);
+            for (word, chunk) in guarded_words.iter_mut().zip(guarded_bytes.chunks_exact(8)) {
                 *word = u64::from_le_bytes(chunk.try_into().unwrap());
             }
-            let res = crate::words64_to_limbs(&words);
-            if lt(&res, &self.modulo) {
-                return self.to_montgomery(&res);
+            *guarded_limbs = crate::words64_to_limbs(&guarded_words);
+            after_decode();
+            if lt(&guarded_limbs, &self.modulo) {
+                return self.to_montgomery(&guarded_limbs);
             }
         }
     }
@@ -633,5 +670,67 @@ impl<const W: usize, const L: usize, const ACCUM_L: usize, Tag, S: MontgomeryStr
     fn newton_denominator(&self, _k: usize, i: usize) -> Self::E {
         let val = self.u64_to_element(i as u64);
         self.invert(&val)
+    }
+}
+
+#[cfg(test)]
+mod sampling_zeroization_tests {
+    use super::FpGenericField;
+    use crate::{
+        field::{RuntimeSerializableField, SupportsSampling},
+        Limb, LIMBS_PER_U64,
+    };
+
+    type TestField = FpGenericField<1, LIMBS_PER_U64, { 2 * LIMBS_PER_U64 + 1 }>;
+
+    #[test]
+    fn sampling_scratch_is_wiped_after_acceptance_rejection_and_unwind() {
+        let field = TestField::new_generic([17]);
+        let mut bytes = vec![0xa5; 8];
+        let mut words = [0xa5a5_a5a5_a5a5_a5a5];
+        let mut limbs = [Limb::MAX; LIMBS_PER_U64];
+        let mut calls = 0usize;
+        let sampled = field.sample_with_scratch(
+            &mut |_| {
+                calls += 1;
+                if calls == 1 {
+                    vec![0xff; 8]
+                } else {
+                    3u64.to_le_bytes().to_vec()
+                }
+            },
+            &mut bytes,
+            &mut words,
+            &mut limbs,
+            || {},
+        );
+        assert_eq!(calls, 2);
+        assert_eq!(field.to_words64(&sampled), [3]);
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(words, [0]);
+        assert_eq!(limbs, [0; LIMBS_PER_U64]);
+
+        bytes.fill(0xa5);
+        words.fill(0xa5a5_a5a5_a5a5_a5a5);
+        limbs.fill(Limb::MAX);
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            field.sample_with_scratch(
+                &mut |_| 3u64.to_le_bytes().to_vec(),
+                &mut bytes,
+                &mut words,
+                &mut limbs,
+                || panic!("injected sampling unwind"),
+            );
+        }));
+        assert!(unwind.is_err());
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(words, [0]);
+        assert_eq!(limbs, [0; LIMBS_PER_U64]);
+
+        // Retain ordinary trait coverage alongside the scratch-specific seam.
+        assert_eq!(
+            field.to_words64(&field.sample(|_| 4u64.to_le_bytes().to_vec())),
+            [4]
+        );
     }
 }

@@ -216,14 +216,45 @@ impl RuntimeField<2> for Gf2_128Field {
 
 impl crate::field::SupportsSampling<2> for Gf2_128Field {
     fn sample<R: FnMut(usize) -> Vec<u8>>(&self, mut rng: R) -> Self::E {
-        let buf = rng(16);
+        let mut bytes = Vec::new();
+        let mut value = 0u128;
+        self.sample_with_scratch(&mut rng, &mut bytes, &mut value, || {})
+    }
+}
+
+impl Gf2_128Field {
+    fn sample_with_scratch<R, H>(
+        &self,
+        rng: &mut R,
+        bytes: &mut Vec<u8>,
+        value: &mut u128,
+        after_decode: H,
+    ) -> Gf2_128
+    where
+        R: FnMut(usize) -> Vec<u8>,
+        H: FnOnce(),
+    {
+        use crate::utility::ZeroizeOnDropRef;
+        use zeroize::{Zeroize, Zeroizing};
+
+        let mut guarded_bytes = ZeroizeOnDropRef(bytes);
+        let mut guarded_value = ZeroizeOnDropRef(value);
+        guarded_bytes.zeroize();
+        guarded_bytes.clear();
+        guarded_bytes.reserve_exact(16);
+        let random = Zeroizing::new(rng(16));
         assert_eq!(
-            buf.len(),
+            random.len(),
             16,
             "sampling callback returned an unexpected number of bytes"
         );
-        let val = u128::from_le_bytes(buf.try_into().unwrap());
-        Gf2_128::from(val)
+        guarded_bytes.extend_from_slice(&random);
+        *guarded_value = guarded_bytes
+            .iter()
+            .enumerate()
+            .fold(0u128, |acc, (i, byte)| acc | (u128::from(*byte) << (i * 8)));
+        after_decode();
+        Gf2_128::from(*guarded_value)
     }
 }
 
@@ -326,3 +357,39 @@ impl core_algebra::SupportsU128Conversions for Gf2_128Field {
 }
 
 pub type Gf2_128RuntimeField = Gf2_128Field;
+
+#[cfg(test)]
+mod sampling_zeroization_tests {
+    use super::Gf2_128Field;
+
+    #[test]
+    fn binary_field_sampling_scratch_is_wiped_on_return_and_unwind() {
+        let field = Gf2_128Field::new();
+        let expected = 0x0011_2233_4455_6677_8899_aabb_ccdd_eeffu128;
+        let mut bytes = vec![0xa5; 16];
+        let mut value = u128::MAX;
+        let sampled = field.sample_with_scratch(
+            &mut |_| expected.to_le_bytes().to_vec(),
+            &mut bytes,
+            &mut value,
+            || {},
+        );
+        assert_eq!(sampled.to_u128(), expected);
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(value, 0);
+
+        bytes.fill(0xa5);
+        value = u128::MAX;
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            field.sample_with_scratch(
+                &mut |_| expected.to_le_bytes().to_vec(),
+                &mut bytes,
+                &mut value,
+                || panic!("injected binary-field sampling unwind"),
+            );
+        }));
+        assert!(unwind.is_err());
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(value, 0);
+    }
+}
