@@ -18,7 +18,10 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "algebra/fp.h"
@@ -183,6 +186,54 @@ TEST(Random, GF2_128) {
 TEST(Random, SecureRandomEngine) {
   SecureRandomEngine e;
   test_all(&e);
+}
+
+class ScriptedRandomEngine final : public RandomEngine {
+ public:
+  explicit ScriptedRandomEngine(std::vector<uint8_t> script,
+                                bool throw_after_write = false)
+      : script_(std::move(script)), throw_after_write_(throw_after_write) {}
+
+  void bytes(uint8_t* buf, size_t n) override {
+    ASSERT_LE(offset_ + n, script_.size());
+    std::memcpy(buf, script_.data() + offset_, n);
+    offset_ += n;
+    ++calls_;
+    if (throw_after_write_) {
+      throw std::runtime_error("injected random-engine failure");
+    }
+  }
+
+  size_t calls() const { return calls_; }
+
+ private:
+  std::vector<uint8_t> script_;
+  size_t offset_ = 0;
+  size_t calls_ = 0;
+  bool throw_after_write_;
+};
+
+TEST(Random, NatScratchIsWipedOnSuccessRejectionAndException) {
+  std::array<uint8_t, sizeof(size_t)> bytes;
+  size_t candidate = 0xa5;
+  ScriptedRandomEngine accepting_after_rejection({0x07, 0x03});
+
+  bytes.fill(0xa5);
+  EXPECT_EQ(accepting_after_rejection.nat_with_scratch(5, bytes, candidate),
+            3u);
+  EXPECT_EQ(accepting_after_rejection.calls(), 2u);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, 0u);
+
+  bytes.fill(0xa5);
+  candidate = 0xa5;
+  ScriptedRandomEngine throwing({0x03}, true);
+  EXPECT_THROW(throwing.nat_with_scratch(5, bytes, candidate),
+               std::runtime_error);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, 0u);
 }
 
 }  // namespace

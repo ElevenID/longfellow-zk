@@ -28,6 +28,7 @@
 #include "algebra/static_string.h"
 #include "algebra/sysdep.h"
 #include "util/panic.h"
+#include "util/secure_wipe.h"
 #include "util/serialization.h"
 
 namespace proofs {
@@ -269,15 +270,26 @@ class Fp24 {
 
   Elt sample(
       const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
+    std::array<uint8_t, kBytes> buf{};
+    uint32_t candidate = 0;
+    return sample_with_scratch(fill_bytes, buf, candidate);
+  }
+
+  // Scratch-aware sampling seam used to verify cleanup on every exit path.
+  Elt sample_with_scratch(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes,
+      std::array<uint8_t, kBytes>& buf, uint32_t& candidate) const {
+    SecureObjectWipeGuard<std::array<uint8_t, kBytes>> wipe_buf(buf);
+    SecureObjectWipeGuard<uint32_t> wipe_candidate(candidate);
     const size_t total_l = (exact_bits_ + 7) / 8;
     const uint32_t mask = (~static_cast<uint32_t>(0)) >> (32 - exact_bits_);
-    uint8_t buf[kBytes] = {0};
     for (;;) {
-      fill_bytes(total_l, buf);
-      uint32_t an = u32_of_le(buf);
-      an &= mask;
-      if (an < m_) {
-        return to_montgomery(an);
+      secure_wipe_object(buf);
+      secure_wipe_object(candidate);
+      fill_bytes(total_l, buf.data());
+      candidate = u32_of_le(buf.data()) & mask;
+      if (candidate < m_) {
+        return to_montgomery(candidate);
       }
     }
   }
