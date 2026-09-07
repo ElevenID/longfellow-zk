@@ -17,6 +17,15 @@ pub use crate::arch::{
     Gf2_128, Gf2_128Accum,
 };
 use crate::field::{AlgebraicField, RuntimeBinaryField, RuntimeField};
+use zeroize::Zeroize;
+
+impl Zeroize for Gf2_128 {
+    fn zeroize(&mut self) {
+        let mut value = self.to_u128();
+        value.zeroize();
+        *self = Self::from_u128(value);
+    }
+}
 
 impl Gf2_128 {
     #[inline(always)]

@@ -173,8 +173,8 @@ fn test_zk_prover_verifier_end_to_end() {
     // 4. Prover prove
     let zkp = prover_inst
         .prove(
-            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
-            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
+            &w0[..prover_inst.circuit.raw.npublic_input],
+            &w0[prover_inst.circuit.raw.npublic_input..],
             &prover,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -309,8 +309,8 @@ fn test_zk_rfc_testvector1() {
     // 4. Prover prove
     let zkp = prover_inst
         .prove(
-            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
-            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
+            &w0[..prover_inst.circuit.raw.npublic_input],
+            &w0[prover_inst.circuit.raw.npublic_input..],
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -628,8 +628,8 @@ fn test_zk_triple_zero_zero_zero() {
 
     let zkp = prover_inst
         .prove(
-            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
-            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
+            &w0[..prover_inst.circuit.raw.npublic_input],
+            &w0[prover_inst.circuit.raw.npublic_input..],
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -770,8 +770,8 @@ fn test_zk_intermediate_zero_logw() {
 
     let zkp = prover_inst
         .prove(
-            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
-            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
+            &w0[..prover_inst.circuit.raw.npublic_input],
+            &w0[prover_inst.circuit.raw.npublic_input..],
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -854,8 +854,8 @@ fn test_zk_zero_layers() {
         );
 
         let prove_res = prover_inst.prove(
-            w0[..2].to_vec(),
-            w0[2..].to_vec(),
+            &w0[..2],
+            &w0[2..],
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -904,10 +904,8 @@ fn test_zk_zero_layers() {
             );
         } else {
             let first_nonzero = mask.trailing_zeros() as usize;
-            let expected_eval_error = format!(
-                "Circuit output at index {first_nonzero} is not zero: {:?}",
-                f.one()
-            );
+            let expected_eval_error =
+                format!("Circuit output at index {first_nonzero} is not zero");
             assert_eq!(
                 eval_res.unwrap_err(),
                 expected_eval_error,

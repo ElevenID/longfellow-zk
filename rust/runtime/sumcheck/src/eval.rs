@@ -41,7 +41,7 @@ pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
 
     for (i, val) in w.iter().enumerate() {
         if !f.is_zero(val) {
-            return Err(format!("Circuit output at index {i} is not zero: {val:?}"));
+            return Err(format!("Circuit output at index {i} is not zero"));
         }
     }
 
@@ -70,7 +70,7 @@ pub fn eval_quad<const W: usize, F: RuntimeField<W> + SerializableField>(
             f.mul(&mut y, wr);
             if !f.is_zero(&y) {
                 return Err(format!(
-                    "gate multiplication constraint not satisfied: left_wire={l}, right_wire={r}, left_val={wl:?}, right_val={wr:?}, computed_val={y:?}"
+                    "gate multiplication constraint not satisfied: left_wire={l}, right_wire={r}"
                 ));
             }
         } else {

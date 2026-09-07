@@ -22,6 +22,7 @@ use core_algebra::{
     AlgebraicField, BareField, HasLookupPoints, SerializableField, SupportsNatConversions,
     SupportsU64Conversions,
 };
+use zeroize::Zeroize;
 
 use crate::{
     field::{RuntimeField, RuntimeSerializableField, SupportsSampling},
@@ -73,6 +74,12 @@ impl<const L: usize> MontgomeryStrategy<L> for GenericStrategy {
 
 /// A generic finite field element represented in Montgomery form ($x \cdot R \pmod M$).
 pub struct FpGenericElement<const L: usize, Tag>(pub [Limb; L], pub PhantomData<Tag>);
+
+impl<const L: usize, Tag> Zeroize for FpGenericElement<L, Tag> {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FpGenericAccum<const A: usize>(pub [Limb; A]);

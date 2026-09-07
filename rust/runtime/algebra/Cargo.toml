@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 core-algebra = { path = "../../core/algebra" }
+zeroize = "1.8"
 
 [dev-dependencies]
 num-bigint = "0.4"

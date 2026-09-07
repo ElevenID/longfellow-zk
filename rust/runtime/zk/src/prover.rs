@@ -16,6 +16,7 @@ use runtime_algebra::{ElementOf, InterpolatorFactory, Subfield, ZkField};
 use runtime_ligero::{param::LigeroQuadraticConstraint, LigeroProver};
 use runtime_random::{RandomEngine, Transcript};
 use runtime_sumcheck::{prove_core as sumcheck_prove_core, SumcheckProof, TranscriptSumcheck};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{common::ZkContext, ZkProof};
 
@@ -52,7 +53,10 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         ts: &mut Transcript,
         rng: &mut R,
         sf: &SF,
-    ) -> (ZkCommitResult<W, F>, runtime_proto::ZkProofGeometry) {
+    ) -> (ZkCommitResult<W, F>, runtime_proto::ZkProofGeometry)
+    where
+        ElementOf<F>: Zeroize,
+    {
         assert!(
             self.circuit.raw.ninput >= self.circuit.raw.npublic_input,
             "npublic_input ({}) exceeds ninput ({})",
@@ -71,7 +75,9 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
 
         let (pad, pad_witness) = new_pad(&self.circuit, rng, ctx.f);
 
-        let mut witness = witness_only.to_vec();
+        // Includes both credential-derived witness values and random proof pads.
+        // Keep the combined allocation guarded through commitment generation.
+        let mut witness = Zeroizing::new(witness_only.to_vec());
         witness.extend(pad_witness);
 
         let lqc = crate::common::setup_lqc(n_witness, &self.circuit);
@@ -113,8 +119,8 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
     /// Generates ZK proof over the committed witness and pads.
     pub fn prove<IF: InterpolatorFactory<W, F>>(
         &self,
-        public_inputs: Vec<ElementOf<F>>,
-        witness_only: Vec<ElementOf<F>>,
+        public_inputs: &[ElementOf<F>],
+        witness_only: &[ElementOf<F>],
         commit_info: &ZkCommitResult<W, F>,
         tsp: &mut Transcript,
         ctx: &ZkContext<'_, W, F, IF>,
@@ -134,13 +140,13 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
             "public inputs length mismatch"
         );
         let mut inputs_and_witnesses = Vec::with_capacity(n_public + n_witness);
-        inputs_and_witnesses.extend(public_inputs.clone());
-        inputs_and_witnesses.extend(witness_only);
+        inputs_and_witnesses.extend_from_slice(public_inputs);
+        inputs_and_witnesses.extend_from_slice(witness_only);
 
         // Initialize Fiat-Shamir transcript with the sumcheck statement here before forking,
         // rather than inside sumcheck_prove_core, because ZkProver runs both sumcheck_prove_core
         // and symbolic_sumcheck_verifier_core in parallel over the same transcript state.
-        tsp.write_sumcheck_statement(&self.circuit, &public_inputs, ctx.f);
+        tsp.write_sumcheck_statement(&self.circuit, public_inputs, ctx.f);
 
         // We clone tsp into ts_sumcheck_prover.  ZKProver is running
         // both a sumcheck prover and a (symbolic) sumcheck verifier
@@ -164,7 +170,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         // since it is public and computed by the verifier during verification.
         let (a, b) = crate::symbolic_sumcheck_verifier::symbolic_sumcheck_verifier_core(
             n_witness,
-            &public_inputs,
+            public_inputs,
             &self.circuit,
             &proof,
             Some(&aux),
