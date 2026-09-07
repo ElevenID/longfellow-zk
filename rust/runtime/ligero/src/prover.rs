@@ -137,8 +137,8 @@ where
         f: &F,
     ) -> Vec<ElementOf<F>> {
         let interp_a = make_interpolator.make(self.param.block, self.param.dblock);
-        let mut y = self.tableau.row(self.param.idot)[..self.param.dblock].to_vec();
-        let mut a_ext = vec![f.zero(); self.param.dblock];
+        let mut y = Zeroizing::new(self.tableau.row(self.param.idot)[..self.param.dblock].to_vec());
+        let mut a_ext = Zeroizing::new(vec![f.zero(); self.param.dblock]);
 
         for i in 0..self.param.nwqrow {
             layout_aext_into(&self.param, i, a, &mut a_ext, f);
@@ -152,7 +152,7 @@ where
                 f,
             );
         }
-        y
+        y.to_vec()
     }
 
     fn quadratic_proof(
@@ -160,7 +160,8 @@ where
         u_quad: &[ElementOf<F>],
         f: &F,
     ) -> (Vec<ElementOf<F>>, Vec<ElementOf<F>>) {
-        let mut y = self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec();
+        let mut y =
+            Zeroizing::new(self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec());
 
         let iqx = self.param.iq;
         let iqy = iqx + self.param.nqtriples;
@@ -445,7 +446,7 @@ fn layout<
 where
     ElementOf<F>: Zeroize,
 {
-    let mut tableau = Tableau::new(param.nrow, param.block_enc, f.zero());
+    let mut tableau = Tableau::new_zeroizing(param.nrow, param.block_enc, f.zero());
     layout_blinding_rows(param, &mut tableau, make_interpolator, rng, f);
     layout_witness_rows(
         subfield_boundary,

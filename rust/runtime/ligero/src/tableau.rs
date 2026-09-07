@@ -16,11 +16,23 @@ pub struct Tableau<T> {
     data: Vec<T>,
     width: usize,
     height: usize,
-    wipe: fn(&mut [T]),
+    wipe: Option<fn(&mut [T])>,
 }
 
 impl<T> Tableau<T> {
     pub fn new(height: usize, width: usize, default: T) -> Self
+    where
+        T: Clone,
+    {
+        Self {
+            data: vec![default; height * width],
+            width,
+            height,
+            wipe: None,
+        }
+    }
+
+    pub fn new_zeroizing(height: usize, width: usize, default: T) -> Self
     where
         T: Clone + zeroize::Zeroize,
     {
@@ -34,7 +46,7 @@ impl<T> Tableau<T> {
             data: vec![default; height * width],
             width,
             height,
-            wipe: wipe::<T>,
+            wipe: Some(wipe::<T>),
         }
     }
 
@@ -52,7 +64,9 @@ impl<T> Tableau<T> {
 
 impl<T> Drop for Tableau<T> {
     fn drop(&mut self) {
-        (self.wipe)(&mut self.data);
+        if let Some(wipe) = self.wipe {
+            wipe(&mut self.data);
+        }
     }
 }
 
@@ -97,7 +111,7 @@ mod tests {
     fn drop_zeroizes_every_tableau_element() {
         let zeroized = Arc::new(AtomicUsize::new(0));
         {
-            let _tableau = Tableau::new(3, 4, Tracked(Arc::clone(&zeroized)));
+            let _tableau = Tableau::new_zeroizing(3, 4, Tracked(Arc::clone(&zeroized)));
         }
         assert_eq!(zeroized.load(Ordering::SeqCst), 12);
     }
