@@ -22,12 +22,13 @@ pub fn eval_circuit<const W: usize, F>(
     w: Vec<F::E>,
     circuit: &core_proto::circuit::Circuit<F>,
     f: &F,
-) -> Result<WitnessLayers<F::E>, String>
+) -> Result<Vec<Vec<F::E>>, String>
 where
     F: RuntimeField<W> + SerializableField,
     F::E: Zeroize,
 {
-    eval_circuit_guarded(Zeroizing::new(w), circuit, f)
+    let mut guarded = eval_circuit_guarded(Zeroizing::new(w), circuit, f)?;
+    Ok(std::mem::take(&mut *guarded))
 }
 
 pub fn eval_circuit_guarded<const W: usize, F>(
@@ -49,8 +50,8 @@ where
             circuit.raw.noutput
         };
 
-        let v =
-            eval_quad(nv, &w, &circuit.raw.layers[l], &circuit.raw.constants, f).map_err(|e| {
+        let v = eval_quad_guarded(nv, &w, &circuit.raw.layers[l], &circuit.raw.constants, f)
+            .map_err(|e| {
                 format!("Witness does not satisfy circuit constraints at layer {l}: {e}")
             })?;
 
@@ -68,6 +69,21 @@ where
 }
 
 pub fn eval_quad<const W: usize, F>(
+    nv: usize,
+    w: &[F::E],
+    layer: &core_proto::circuit::Layer<F>,
+    constants: &[F::E],
+    f: &F,
+) -> Result<Vec<F::E>, String>
+where
+    F: RuntimeField<W> + SerializableField,
+    F::E: Zeroize,
+{
+    let mut guarded = eval_quad_guarded(nv, w, layer, constants, f)?;
+    Ok(std::mem::take(&mut *guarded))
+}
+
+pub fn eval_quad_guarded<const W: usize, F>(
     nv: usize,
     w: &[F::E],
     layer: &core_proto::circuit::Layer<F>,

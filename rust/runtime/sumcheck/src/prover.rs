@@ -32,6 +32,20 @@ struct Bindings<const W: usize, F: InterpolationField<W>> {
 }
 
 pub fn prove<const W: usize, F>(
+    in_layers: Vec<Vec<ElementOf<F>>>,
+    pad: &SumcheckProof<W, F>,
+    circuit: &core_proto::circuit::Circuit<F>,
+    transcript: &mut Transcript,
+    f: &F,
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
+where
+    F: InterpolationField<W> + SupportsSampling<W>,
+    ElementOf<F>: Zeroize,
+{
+    prove_guarded(Zeroizing::new(in_layers), pad, circuit, transcript, f)
+}
+
+pub fn prove_guarded<const W: usize, F>(
     in_layers: Zeroizing<Vec<Vec<ElementOf<F>>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
@@ -58,10 +72,24 @@ where
     );
     let public_inputs = &inputs[..circuit.raw.npublic_input];
     transcript.write_sumcheck_statement(circuit, public_inputs, f);
-    prove_core(in_layers, pad, circuit, transcript, f)
+    prove_core_guarded(in_layers, pad, circuit, transcript, f)
 }
 
 pub fn prove_core<const W: usize, F>(
+    in_layers: Vec<Vec<ElementOf<F>>>,
+    pad: &SumcheckProof<W, F>,
+    circuit: &core_proto::circuit::Circuit<F>,
+    transcript: &mut Transcript,
+    f: &F,
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
+where
+    F: InterpolationField<W> + SupportsSampling<W>,
+    ElementOf<F>: Zeroize,
+{
+    prove_core_guarded(Zeroizing::new(in_layers), pad, circuit, transcript, f)
+}
+
+pub fn prove_core_guarded<const W: usize, F>(
     mut in_layers: Zeroizing<Vec<Vec<ElementOf<F>>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
@@ -98,7 +126,7 @@ where
 
     let mut claims = [f.zero(), f.zero()];
     let mut layers = Vec::with_capacity(num_layers);
-    let mut bound_quad = Vec::with_capacity(num_layers);
+    let mut bound_quad = Zeroizing::new(Vec::with_capacity(num_layers));
 
     for i in 0..num_layers {
         let clr = &layers_slice[i];
@@ -135,7 +163,9 @@ where
 
     (
         SumcheckProof { layers },
-        SumcheckProofAux::from_bound_quad(bound_quad),
+        SumcheckProofAux {
+            bound_quad: std::mem::take(&mut *bound_quad),
+        },
     )
 }
 

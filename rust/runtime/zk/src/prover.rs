@@ -15,7 +15,9 @@
 use runtime_algebra::{ElementOf, InterpolatorFactory, Subfield, ZkField};
 use runtime_ligero::{param::LigeroQuadraticConstraint, LigeroProver};
 use runtime_random::{RandomEngine, Transcript};
-use runtime_sumcheck::{prove_core as sumcheck_prove_core, SumcheckProof, TranscriptSumcheck};
+use runtime_sumcheck::{
+    prove_core_guarded as sumcheck_prove_core, SumcheckProof, TranscriptSumcheck,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{common::ZkContext, ZkProof};
@@ -51,6 +53,33 @@ where
             }
         }
         layer.claims.zeroize();
+    }
+}
+
+struct SumcheckPadGuard<const W: usize, F: ZkField<W>> {
+    pad: SumcheckProof<W, F>,
+    wipe: fn(&mut SumcheckProof<W, F>),
+}
+
+impl<const W: usize, F: ZkField<W>> SumcheckPadGuard<W, F> {
+    fn new() -> Self
+    where
+        ElementOf<F>: Zeroize,
+    {
+        Self {
+            pad: SumcheckProof { layers: Vec::new() },
+            wipe: wipe_sumcheck_pad::<W, F>,
+        }
+    }
+
+    fn into_inner(mut self) -> SumcheckProof<W, F> {
+        std::mem::replace(&mut self.pad, SumcheckProof { layers: Vec::new() })
+    }
+}
+
+impl<const W: usize, F: ZkField<W>> Drop for SumcheckPadGuard<W, F> {
+    fn drop(&mut self) {
+        (self.wipe)(&mut self.pad);
     }
 }
 
@@ -197,6 +226,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
             &mut ts_sumcheck_prover,
             ctx.f,
         );
+        let aux = Zeroizing::new(aux);
 
         // The prover does not need the RHS constants vector `b` and can discard it,
         // since it is public and computed by the verifier during verification.
@@ -245,7 +275,7 @@ fn new_pad<
 where
     ElementOf<F>: Zeroize,
 {
-    let mut pad = SumcheckProof { layers: Vec::new() };
+    let mut pad = SumcheckPadGuard::new();
     let mut witness = Zeroizing::new(Vec::new());
 
     for ly in 0..circuit.raw.layers.len() {
@@ -278,11 +308,11 @@ where
         let rr = f.mulf(&r0, &r1);
         witness.push(rr);
 
-        pad.layers.push(runtime_sumcheck::LayerProof {
+        pad.pad.layers.push(runtime_sumcheck::LayerProof {
             hp,
             claims: [r0, r1],
         });
     }
 
-    (pad, witness)
+    (pad.into_inner(), witness)
 }
