@@ -545,7 +545,9 @@ MdocProverErrorCode fill_attribute(DenseFiller<Field>& filler,
 
   if (version >= 7) {
     std::vector<uint8_t> vbuf;
-    SecureWipeGuard<uint8_t> wipe_vbuf(vbuf);
+    const size_t encoded_id_len = (attr.id_len < 24 ? 1 : 2) + attr.id_len;
+    vbuf.reserve(encoded_id_len);
+    FixedCapacitySecureWipeGuard<uint8_t> wipe_vbuf(vbuf);
     append_text_len(vbuf, attr.id_len);
     vbuf.insert(vbuf.end(), attr.id, attr.id + attr.id_len);
     for (size_t j = 0; j < vbuf.size() && j < 32; ++j) {
@@ -570,9 +572,18 @@ MdocProverErrorCode fill_attribute(DenseFiller<Field>& filler,
     filler.push_back(vlen, 8, F);
   } else {
     // version < 7
+    const size_t encoded_len = (attr.id_len < 24 ? 1 : 2) + attr.id_len +
+                               1 + 12 + attr.cbor_value_len;
+    if (encoded_len > 96) {
+      log(ERROR, "Attribute %.*s is too long: %zu",
+          static_cast<int>(std::min<size_t>(attr.id_len, 32)),
+          reinterpret_cast<const char*>(attr.id), encoded_len);
+      return MDOC_PROVER_ATTRIBUTE_TOO_LONG;
+    }
     // Append the length of the elementIdentifier.
     std::vector<uint8_t> vbuf;
-    SecureWipeGuard<uint8_t> wipe_vbuf(vbuf);
+    vbuf.reserve(encoded_len);
+    FixedCapacitySecureWipeGuard<uint8_t> wipe_vbuf(vbuf);
     append_text_len(vbuf, attr.id_len);
     vbuf.insert(vbuf.end(), attr.id, attr.id + attr.id_len);
     append_text_len(vbuf, 12);  // len of "elementValue"
@@ -582,12 +593,7 @@ MdocProverErrorCode fill_attribute(DenseFiller<Field>& filler,
     vbuf.insert(vbuf.end(), attr.cbor_value,
                 attr.cbor_value + attr.cbor_value_len);
 
-    if (vbuf.size() > 96) {
-      log(ERROR, "Attribute %.*s is too long: %zu",
-          static_cast<int>(std::min<size_t>(attr.id_len, 32)),
-          reinterpret_cast<const char*>(attr.id), vbuf.size());
-      return MDOC_PROVER_ATTRIBUTE_TOO_LONG;
-    }
+    check(vbuf.size() == encoded_len, "attribute encoded length mismatch");
     size_t len = 0;
     for (size_t j = 0; j < vbuf.size() && len < 96; ++j, ++len) {
       fill_byte(v, vbuf[j], len, F);
@@ -831,11 +837,12 @@ class MdocHashWitness {
     if (version < 4) return MDOC_PROVER_VERSION_NOT_SUPPORTED;
 
     std::vector<uint8_t> buf;
-    SecureWipeGuard<uint8_t> wipe_buf(buf);
     if (pm_.t_mso_.len >= max_shablocks(version) * 64 - 9 - kCose1PrefixLen) {
       log(ERROR, "tagged mso is too big: %zu", pm_.t_mso_.len);
       return MDOC_PROVER_TAGGED_MSO_TOO_BIG;
     }
+    buf.reserve(kCose1PrefixLen + 2 + pm_.t_mso_.len);
+    FixedCapacitySecureWipeGuard<uint8_t> wipe_buf(buf);
 
     buf.assign(std::begin(kCose1Prefix), std::end(kCose1Prefix));
     // Add 2-byte length

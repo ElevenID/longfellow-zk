@@ -15,6 +15,7 @@
 #include "util/secure_wipe.h"
 
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -51,6 +52,34 @@ TEST(SecureWipeTest, ObjectGuardClearsStorageAtScopeExit) {
   }
   EXPECT_EQ(words[0], 0u);
   EXPECT_EQ(words[1], 0u);
+}
+
+TEST(SecureWipeTest, ScratchClearsAfterNormalReturnAndExceptionUnwind) {
+  uint8_t scratch[16];
+  with_secure_scratch(scratch, [](auto& bytes) {
+    for (auto& byte : bytes) byte = 0xa5;
+  });
+  for (uint8_t byte : scratch) EXPECT_EQ(byte, 0u);
+
+  EXPECT_THROW(
+      with_secure_scratch(scratch, [](auto& bytes) {
+        for (auto& byte : bytes) byte = 0x5a;
+        throw std::runtime_error("test unwind");
+      }),
+      std::runtime_error);
+  for (uint8_t byte : scratch) EXPECT_EQ(byte, 0u);
+}
+
+TEST(SecureWipeTest, FixedCapacityGuardClearsWithoutReallocation) {
+  std::vector<uint8_t> bytes;
+  bytes.reserve(32);
+  auto* allocation = bytes.data();
+  {
+    FixedCapacitySecureWipeGuard<uint8_t> wipe(bytes);
+    bytes.assign(32, 0xa5);
+    EXPECT_EQ(bytes.data(), allocation);
+  }
+  for (uint8_t byte : bytes) EXPECT_EQ(byte, 0u);
 }
 
 }  // namespace

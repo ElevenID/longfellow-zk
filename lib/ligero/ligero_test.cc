@@ -340,5 +340,35 @@ TEST(Ligero, ZeroSizeProof) {
                lqc.data(), rs_factory, F);
 }
 
+TEST(Ligero, RejectsQuadraticIndicesBeforeWitnessAccess) {
+  using Field = Fp<1>;
+  using ConvolutionFactory = FFTConvolutionFactory<Field>;
+  using ReedSolomonFactory = ReedSolomonFactory<Field, ConvolutionFactory>;
+  const Field F("18446744069414584321");
+  const ConvolutionFactory conv_factory(F, F.of_scalar(1753635133440165772ull),
+                                        1ull << 32);
+  const ReedSolomonFactory rs_factory(conv_factory, F);
+  constexpr size_t nw = 8;
+  LigeroParam<Field> param(nw, /*nq=*/1, /*rateinv=*/4, /*nreq=*/2);
+  std::vector<Field::Elt> witness(nw, F.zero());
+
+  for (size_t invalid_member = 0; invalid_member < 3; ++invalid_member) {
+    LigeroQuadraticConstraint constraint{0, 0, 0};
+    if (invalid_member == 0) constraint.x = nw;
+    if (invalid_member == 1) constraint.y = nw;
+    if (invalid_member == 2) constraint.z = nw;
+    EXPECT_DEATH(
+        {
+          SecureRandomEngine rng;
+          Transcript transcript(reinterpret_cast<const uint8_t*>("bounds"), 6);
+          LigeroCommitment<Field> commitment;
+          LigeroProver<Field, ReedSolomonFactory> prover(param);
+          prover.commit(commitment, transcript, witness.data(), 0, &constraint,
+                        rs_factory, rng, F);
+        },
+        "l->(x|y|z) < p_.nw");
+  }
+}
+
 }  // namespace
 }  // namespace proofs
