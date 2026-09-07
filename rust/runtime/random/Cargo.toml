@@ -16,6 +16,6 @@ runtime-algebra = { path = "../algebra" }
 core-algebra = { path = "../../core/algebra" }
 
 [features]
-default = ["secure-random"]
+default = []
 secure-random = ["dep:getrandom", "dep:rand_chacha", "dep:rand_core"]
 testonly = ["secure-random"]
