@@ -45,6 +45,20 @@ TEST(SecureWipeTest, GuardClearsStorageAtScopeExit) {
   }
 }
 
+TEST(SecureWipeTest, VectorResetGuardWipesAndRestoresLengthOnUnwind) {
+  std::vector<uint32_t> words(1, 0xa5a5a5a5u);
+  words.reserve(2);
+  EXPECT_THROW(
+      {
+        SecureVectorResetGuard<uint32_t> wipe(words, 1);
+        words.push_back(0x5a5a5a5au);
+        throw std::runtime_error("test unwind");
+      },
+      std::runtime_error);
+  ASSERT_EQ(words.size(), 1u);
+  EXPECT_EQ(words[0], 0u);
+}
+
 TEST(SecureWipeTest, ObjectGuardClearsStorageAtScopeExit) {
   uint64_t words[2] = {0xffffffffffffffffULL, 0xa5a5a5a5a5a5a5a5ULL};
   {
@@ -76,10 +90,28 @@ TEST(SecureWipeTest, FixedCapacityGuardClearsWithoutReallocation) {
   auto* allocation = bytes.data();
   {
     FixedCapacitySecureWipeGuard<uint8_t> wipe(bytes);
-    bytes.assign(32, 0xa5);
+    uint8_t payload[32];
+    for (auto& byte : payload) byte = 0xa5;
+    wipe.append(payload, sizeof(payload));
     EXPECT_EQ(bytes.data(), allocation);
   }
   for (uint8_t byte : bytes) EXPECT_EQ(byte, 0u);
+}
+
+TEST(SecureWipeTest, FixedCapacityGuardRejectsGrowthBeforeMutation) {
+  std::vector<uint8_t> bytes;
+  bytes.reserve(1);
+  FixedCapacitySecureWipeGuard<uint8_t> wipe(bytes);
+  wipe.push_back(0xa5);
+  auto* allocation = bytes.data();
+  const size_t capacity = bytes.capacity();
+  const size_t length = bytes.size();
+
+  EXPECT_FALSE(wipe.can_append(1));
+  EXPECT_DEATH(wipe.push_back(0x5a), "");
+  EXPECT_EQ(bytes.data(), allocation);
+  EXPECT_EQ(bytes.capacity(), capacity);
+  EXPECT_EQ(bytes.size(), length);
 }
 
 }  // namespace
