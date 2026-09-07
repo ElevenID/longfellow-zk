@@ -44,5 +44,14 @@ TEST(SecureWipeTest, GuardClearsStorageAtScopeExit) {
   }
 }
 
+TEST(SecureWipeTest, ObjectGuardClearsStorageAtScopeExit) {
+  uint64_t words[2] = {0xffffffffffffffffULL, 0xa5a5a5a5a5a5a5a5ULL};
+  {
+    SecureObjectWipeGuard<uint64_t[2]> wipe(words);
+  }
+  EXPECT_EQ(words[0], 0u);
+  EXPECT_EQ(words[1], 0u);
+}
+
 }  // namespace
 }  // namespace proofs

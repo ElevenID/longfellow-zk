@@ -61,6 +61,21 @@ class SecureWipeGuard {
   std::vector<T>* values_;
 };
 
+template <typename T>
+class SecureObjectWipeGuard {
+ public:
+  explicit SecureObjectWipeGuard(T& value) noexcept : value_(&value) {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "SecureObjectWipeGuard requires trivially copyable storage");
+  }
+  SecureObjectWipeGuard(const SecureObjectWipeGuard&) = delete;
+  SecureObjectWipeGuard& operator=(const SecureObjectWipeGuard&) = delete;
+  ~SecureObjectWipeGuard() { secure_wipe_object(*value_); }
+
+ private:
+  T* value_;
+};
+
 }  // namespace proofs
 
 #endif  // PRIVACY_PROOFS_ZK_LIB_UTIL_SECURE_WIPE_H_
