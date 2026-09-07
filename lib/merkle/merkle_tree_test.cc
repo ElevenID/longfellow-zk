@@ -13,12 +13,15 @@
 // limitations under the License.
 
 #include "merkle/merkle_tree.h"
+#include "merkle/merkle_commitment.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include <algorithm>
+#include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include "benchmark/benchmark.h"
@@ -26,6 +29,63 @@
 
 namespace proofs {
 namespace {
+
+class RecognizableRandomEngine : public RandomEngine {
+ public:
+  explicit RecognizableRandomEngine(size_t successful_calls = SIZE_MAX)
+      : successful_calls_(successful_calls) {}
+
+  void bytes(uint8_t* buf, size_t n) override {
+    if (successful_calls_ == 0) {
+      throw std::runtime_error("injected nonce RNG failure");
+    }
+    --successful_calls_;
+    std::memset(buf, 0xa5, n);
+  }
+
+ private:
+  size_t successful_calls_;
+};
+
+TEST(MerkleCommitment, WipesOpenedUnopenedAndPartialNonces) {
+  MerkleCommitment commitment(3);
+  RecognizableRandomEngine rng;
+  const Digest root = commitment.commit(
+      [](size_t leaf, SHA256& sha) {
+        const uint8_t value = static_cast<uint8_t>(leaf);
+        sha.Update(&value, 1);
+      },
+      rng);
+  (void)root;
+
+  MerkleProof opened(1);
+  const size_t first[] = {0};
+  commitment.open(opened, first, 1);
+  for (uint8_t byte : opened.nonce[0].bytes) EXPECT_EQ(byte, 0xa5);
+
+  commitment.clear_sensitive_nonces();
+  MerkleProof cleared(3);
+  const size_t all[] = {0, 1, 2};
+  commitment.open(cleared, all, 3);
+  for (const auto& nonce : cleared.nonce) {
+    for (uint8_t byte : nonce.bytes) EXPECT_EQ(byte, 0);
+  }
+
+  RecognizableRandomEngine throwing_rng(1);
+  EXPECT_THROW(
+      commitment.commit(
+          [](size_t, SHA256& sha) {
+            constexpr uint8_t value = 0x5a;
+            sha.Update(&value, 1);
+          },
+          throwing_rng),
+      std::runtime_error);
+  MerkleProof after_unwind(3);
+  commitment.open(after_unwind, all, 3);
+  for (const auto& nonce : after_unwind.nonce) {
+    for (uint8_t byte : nonce.bytes) EXPECT_EQ(byte, 0);
+  }
+}
 
 TEST(MerkleTree, BuildTree) {
   MerkleTree mt(4);
