@@ -28,9 +28,30 @@ pub struct ZkProver<const W: usize, F: ZkField<W>> {
 
 pub struct ZkCommitResult<const W: usize, F: ZkField<W>> {
     pad: SumcheckProof<W, F>,
+    wipe_pad: fn(&mut SumcheckProof<W, F>),
     lqc: Vec<LigeroQuadraticConstraint>,
     lp: LigeroProver<W, F>,
     pub com: runtime_proto::ligero::LigeroCommitment,
+}
+
+impl<const W: usize, F: ZkField<W>> Drop for ZkCommitResult<W, F> {
+    fn drop(&mut self) {
+        (self.wipe_pad)(&mut self.pad);
+    }
+}
+
+fn wipe_sumcheck_pad<const W: usize, F: ZkField<W>>(pad: &mut SumcheckProof<W, F>)
+where
+    ElementOf<F>: Zeroize,
+{
+    for layer in &mut pad.layers {
+        for hand in &mut layer.hp {
+            for polynomial in hand {
+                polynomial.evaluations.zeroize();
+            }
+        }
+        layer.claims.zeroize();
+    }
 }
 
 impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
@@ -42,11 +63,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
     }
     /// Computes ZK commitment of the witness and ZK pads.
     #[allow(clippy::too_many_arguments)]
-    pub fn commit<
-        IF: InterpolatorFactory<W, F>,
-        R: RandomEngine,
-        SF: Subfield<E = ElementOf<F>>,
-    >(
+    pub fn commit<IF: InterpolatorFactory<W, F>, R: RandomEngine, SF: Subfield<E = ElementOf<F>>>(
         &self,
         witness_only: &[ElementOf<F>],
         ctx: &ZkContext<'_, W, F, IF>,
@@ -77,8 +94,10 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
 
         // Includes both credential-derived witness values and random proof pads.
         // Keep the combined allocation guarded through commitment generation.
-        let mut witness = Zeroizing::new(witness_only.to_vec());
-        witness.extend(pad_witness);
+        let mut witness =
+            Zeroizing::new(Vec::with_capacity(witness_only.len() + pad_witness.len()));
+        witness.extend_from_slice(witness_only);
+        witness.extend(pad_witness.iter().cloned());
 
         let lqc = crate::common::setup_lqc(n_witness, &self.circuit);
 
@@ -113,7 +132,16 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
             com_geom: ligero_param.geom,
             sc_geom,
         };
-        (ZkCommitResult { pad, lqc, lp, com }, geom)
+        (
+            ZkCommitResult {
+                pad,
+                wipe_pad: wipe_sumcheck_pad::<W, F>,
+                lqc,
+                lp,
+                com,
+            },
+            geom,
+        )
     }
 
     /// Generates ZK proof over the committed witness and pads.
@@ -124,7 +152,10 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         commit_info: &ZkCommitResult<W, F>,
         tsp: &mut Transcript,
         ctx: &ZkContext<'_, W, F, IF>,
-    ) -> Result<ZkProof<W, F>, String> {
+    ) -> Result<ZkProof<W, F>, String>
+    where
+        ElementOf<F>: Zeroize,
+    {
         assert!(
             self.circuit.raw.ninput >= self.circuit.raw.npublic_input,
             "npublic_input ({}) exceeds ninput ({})",
@@ -139,7 +170,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
             n_public,
             "public inputs length mismatch"
         );
-        let mut inputs_and_witnesses = Vec::with_capacity(n_public + n_witness);
+        let mut inputs_and_witnesses = Zeroizing::new(Vec::with_capacity(n_public + n_witness));
         inputs_and_witnesses.extend_from_slice(public_inputs);
         inputs_and_witnesses.extend_from_slice(witness_only);
 
@@ -155,8 +186,9 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         // for the sumcheck prover.
         let mut ts_sumcheck_prover = tsp.clone();
 
-        let in_layers = runtime_sumcheck::eval_circuit(inputs_and_witnesses, &self.circuit, ctx.f)
-            .map_err(|e| format!("eval_circuit failed: {e}"))?;
+        let in_layers =
+            runtime_sumcheck::eval_circuit_guarded(inputs_and_witnesses, &self.circuit, ctx.f)
+                .map_err(|e| format!("eval_circuit failed: {e}"))?;
 
         let (proof, aux) = sumcheck_prove_core(
             in_layers,
@@ -209,9 +241,12 @@ fn new_pad<
     circuit: &core_proto::circuit::Circuit<F>,
     rng: &mut R,
     f: &F,
-) -> (SumcheckProof<W, F>, Vec<ElementOf<F>>) {
+) -> (SumcheckProof<W, F>, Zeroizing<Vec<ElementOf<F>>>)
+where
+    ElementOf<F>: Zeroize,
+{
     let mut pad = SumcheckProof { layers: Vec::new() };
-    let mut witness = Vec::new();
+    let mut witness = Zeroizing::new(Vec::new());
 
     for ly in 0..circuit.raw.layers.len() {
         let clr = &circuit.raw.layers[ly];

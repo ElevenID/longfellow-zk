@@ -14,14 +14,33 @@
 
 use core_algebra::SerializableField;
 use runtime_algebra::field::RuntimeField;
+use zeroize::{Zeroize, Zeroizing};
 
-pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
-    mut w: Vec<F::E>,
+pub type WitnessLayers<E> = Zeroizing<Vec<Vec<E>>>;
+
+pub fn eval_circuit<const W: usize, F>(
+    w: Vec<F::E>,
     circuit: &core_proto::circuit::Circuit<F>,
     f: &F,
-) -> Result<Vec<Vec<F::E>>, String> {
+) -> Result<WitnessLayers<F::E>, String>
+where
+    F: RuntimeField<W> + SerializableField,
+    F::E: Zeroize,
+{
+    eval_circuit_guarded(Zeroizing::new(w), circuit, f)
+}
+
+pub fn eval_circuit_guarded<const W: usize, F>(
+    mut w: Zeroizing<Vec<F::E>>,
+    circuit: &core_proto::circuit::Circuit<F>,
+    f: &F,
+) -> Result<WitnessLayers<F::E>, String>
+where
+    F: RuntimeField<W> + SerializableField,
+    F::E: Zeroize,
+{
     let nl = circuit.raw.layers.len();
-    let mut in_layers = vec![Vec::new(); nl];
+    let mut in_layers = Zeroizing::new(vec![Vec::new(); nl]);
 
     for l in (0..nl).rev() {
         let nv = if l > 0 {
@@ -35,7 +54,7 @@ pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
                 format!("Witness does not satisfy circuit constraints at layer {l}: {e}")
             })?;
 
-        in_layers[l] = w;
+        in_layers[l] = std::mem::take(&mut *w);
         w = v;
     }
 
@@ -48,38 +67,46 @@ pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
     Ok(in_layers)
 }
 
-pub fn eval_quad<const W: usize, F: RuntimeField<W> + SerializableField>(
+pub fn eval_quad<const W: usize, F>(
     nv: usize,
     w: &[F::E],
     layer: &core_proto::circuit::Layer<F>,
     constants: &[F::E],
     f: &F,
-) -> Result<Vec<F::E>, String> {
-    let mut v = vec![f.zero(); nv];
+) -> Result<Zeroizing<Vec<F::E>>, String>
+where
+    F: RuntimeField<W> + SerializableField,
+    F::E: Zeroize,
+{
+    let mut v = Zeroizing::new(vec![f.zero(); nv]);
 
-    layer.try_for_each_term(constants, #[inline(always)] |term| {
-        let g = term.g as usize;
-        let r = term.h0 as usize;
-        let l = term.h1 as usize;
+    layer.try_for_each_term(
+        constants,
+        #[inline(always)]
+        |term| {
+            let g = term.g as usize;
+            let r = term.h0 as usize;
+            let l = term.h1 as usize;
 
-        let wl = &w[l];
-        let wr = &w[r];
+            let wl = &w[l];
+            let wr = &w[r];
 
-        if f.is_zero(&term.k) {
-            let mut y = wl.clone();
-            f.mul(&mut y, wr);
-            if !f.is_zero(&y) {
-                return Err(format!(
+            if f.is_zero(&term.k) {
+                let mut y = Zeroizing::new(wl.clone());
+                f.mul(&mut y, wr);
+                if !f.is_zero(&y) {
+                    return Err(format!(
                     "gate multiplication constraint not satisfied: left_wire={l}, right_wire={r}"
                 ));
+                }
+            } else {
+                let mut x = Zeroizing::new(term.k);
+                f.mul(&mut x, wl);
+                f.mul(&mut x, wr);
+                f.add(&mut v[g], &x);
             }
-        } else {
-            let mut x = term.k;
-            f.mul(&mut x, wl);
-            f.mul(&mut x, wr);
-            f.add(&mut v[g], &x);
-        }
-        Ok(())
-    })?;
+            Ok(())
+        },
+    )?;
     Ok(v)
 }

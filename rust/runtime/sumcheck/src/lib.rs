@@ -39,20 +39,45 @@ pub use transcript::TranscriptSumcheck;
 pub use verifier::{verify, Claims};
 
 #[cfg(feature = "prover")]
-pub use crate::eval::{eval_circuit, eval_quad};
+pub use crate::eval::{eval_circuit, eval_circuit_guarded, eval_quad, WitnessLayers};
 
 use core_algebra::ElementOf;
 use runtime_algebra::poly::InterpolationField;
+use zeroize::Zeroize;
 
 /// Auxiliary sumcheck values consumed by symbolic verification.
 pub struct SumcheckProofAux<const W: usize, F: InterpolationField<W>> {
     pub bound_quad: Vec<ElementOf<F>>,
+    wipe_bound_quad: fn(&mut [ElementOf<F>]),
 }
 
 impl<const W: usize, F: InterpolationField<W>> SumcheckProofAux<W, F> {
-    pub fn new(num_layers: usize, f: &F) -> Self {
-        Self {
-            bound_quad: vec![f.zero(); num_layers],
+    pub fn new(num_layers: usize, f: &F) -> Self
+    where
+        ElementOf<F>: Zeroize,
+    {
+        Self::from_bound_quad(vec![f.zero(); num_layers])
+    }
+
+    pub fn from_bound_quad(bound_quad: Vec<ElementOf<F>>) -> Self
+    where
+        ElementOf<F>: Zeroize,
+    {
+        fn wipe<T: Zeroize>(values: &mut [T]) {
+            for value in values {
+                value.zeroize();
+            }
         }
+
+        Self {
+            bound_quad,
+            wipe_bound_quad: wipe::<ElementOf<F>>,
+        }
+    }
+}
+
+impl<const W: usize, F: InterpolationField<W>> Drop for SumcheckProofAux<W, F> {
+    fn drop(&mut self) {
+        (self.wipe_bound_quad)(&mut self.bound_quad);
     }
 }

@@ -1086,6 +1086,7 @@ dependencies = [
  "runtime-random",
  "sha2",
  "util",
+ "zeroize",
 ]
 
 [[package]]
@@ -1134,6 +1135,7 @@ dependencies = [
  "runtime-algebra",
  "runtime-proto",
  "runtime-random",
+ "zeroize",
 ]
 
 [[package]]

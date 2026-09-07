@@ -20,6 +20,7 @@ use runtime_merkle::{commit, open, MerkleCommitment};
 use runtime_proto::LigeroProof;
 use runtime_random::{RandomEngine, Transcript};
 use sha2::digest::Update;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     common::{inner_product_vector, layout_aext_into},
@@ -38,6 +39,8 @@ impl<
         const W: usize,
         F: RuntimeField<W> + core_algebra::SerializableField + SupportsSampling<W>,
     > LigeroProver<W, F>
+where
+    ElementOf<F>: Zeroize,
 {
     /// The `subfield_boundary` parameter is kind of a hack.
     ///
@@ -89,7 +92,7 @@ impl<
         let len = f.serialized_size_bytes();
         let mut update_leaf_hash = |j: usize, sha: &mut sha2::Sha256| {
             let col_idx = j + param.dblock;
-            let mut buf = [0u8; 128];
+            let mut buf = Zeroizing::new([0u8; 128]);
             for r in 0..param.nrow {
                 let val = &tableau[(r, col_idx)];
                 f.to_bytes_into(val, &mut buf[..len]);
@@ -163,7 +166,7 @@ impl<
         let iqy = iqx + self.param.nqtriples;
         let iqz = self.param.iq + 2 * self.param.nqtriples;
 
-        let mut tmp = vec![f.zero(); self.param.dblock];
+        let mut tmp = Zeroizing::new(vec![f.zero(); self.param.dblock]);
         for (i, _u) in u_quad.iter().enumerate().take(self.param.nqtriples) {
             // y[i] += u_quad[i] * (z[i] - x[i] * y[i])
 
@@ -438,7 +441,10 @@ fn layout<
     rng: &mut R,
     f: &F,
     sf: &SF,
-) -> Tableau<ElementOf<F>> {
+) -> Tableau<ElementOf<F>>
+where
+    ElementOf<F>: Zeroize,
+{
     let mut tableau = Tableau::new(param.nrow, param.block_enc, f.zero());
     layout_blinding_rows(param, &mut tableau, make_interpolator, rng, f);
     layout_witness_rows(

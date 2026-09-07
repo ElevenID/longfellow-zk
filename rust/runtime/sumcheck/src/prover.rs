@@ -15,6 +15,7 @@
 use core_algebra::ElementOf;
 use runtime_algebra::{poly::InterpolationField, SupportsSampling};
 use runtime_random::Transcript;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     hquad::HQuad,
@@ -30,13 +31,17 @@ struct Bindings<const W: usize, F: InterpolationField<W>> {
     challenges: [Vec<ElementOf<F>>; 2],
 }
 
-pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
-    in_layers: Vec<Vec<ElementOf<F>>>,
+pub fn prove<const W: usize, F>(
+    in_layers: Zeroizing<Vec<Vec<ElementOf<F>>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
     transcript: &mut Transcript,
     f: &F,
-) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>) {
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
+where
+    F: InterpolationField<W> + SupportsSampling<W>,
+    ElementOf<F>: Zeroize,
+{
     assert!(
         circuit.raw.ninput >= circuit.raw.npublic_input,
         "npublic_input ({}) exceeds ninput ({})",
@@ -56,18 +61,24 @@ pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
     prove_core(in_layers, pad, circuit, transcript, f)
 }
 
-pub fn prove_core<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
-    mut in_layers: Vec<Vec<ElementOf<F>>>,
+pub fn prove_core<const W: usize, F>(
+    mut in_layers: Zeroizing<Vec<Vec<ElementOf<F>>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
     transcript: &mut Transcript,
     f: &F,
-) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>) {
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
+where
+    F: InterpolationField<W> + SupportsSampling<W>,
+    ElementOf<F>: Zeroize,
+{
     // The wire array is conceptually infinite (padded with zeros), but we normalize
     // each layer's wire vector to contain at least one 0 to simplify the implementation
     // and avoid handling the empty vec case in downstream binding functions.
-    for wires in &mut in_layers {
-        *wires = crate::dense::normalize(std::mem::take(wires), f);
+    for wires in in_layers.iter_mut() {
+        if wires.is_empty() {
+            wires.push(f.zero());
+        }
     }
     let (_copy_challenges, challenges_0) = transcript.begin_circuit(f);
     let mut bindings = Bindings {
@@ -92,7 +103,7 @@ pub fn prove_core<const W: usize, F: InterpolationField<W> + SupportsSampling<W>
     for i in 0..num_layers {
         let clr = &layers_slice[i];
         let (alpha, beta) = transcript.begin_layer(f);
-        let wires = std::mem::take(&mut in_layers_slice[i]);
+        let wires = Zeroizing::new(std::mem::take(&mut in_layers_slice[i]));
         let hquad = HQuad::bind_g(
             clr,
             &circuit.raw.constants,
@@ -122,14 +133,17 @@ pub fn prove_core<const W: usize, F: InterpolationField<W> + SupportsSampling<W>
         layers.push(layer_proof);
     }
 
-    (SumcheckProof { layers }, SumcheckProofAux { bound_quad })
+    (
+        SumcheckProof { layers },
+        SumcheckProofAux::from_bound_quad(bound_quad),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn layer<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
+fn layer<const W: usize, F>(
     logw: usize,
     nw: usize,
-    wires: Vec<ElementOf<F>>,
+    wires: Zeroizing<Vec<ElementOf<F>>>,
     pad: &LayerProof<W, F>,
     transcript: &mut Transcript,
     mut hquad: HQuad<W, F>,
@@ -141,7 +155,11 @@ fn layer<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
     Bindings<W, F>,
     [ElementOf<F>; 2],
     ElementOf<F>,
-) {
+)
+where
+    F: InterpolationField<W> + SupportsSampling<W>,
+    ElementOf<F>: Zeroize,
+{
     assert!(crate::sane_logw(logw), "logw must be sane");
     assert!(
         wires.len() as u64 <= (1u64 << logw),
@@ -158,7 +176,7 @@ fn layer<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
     // At round 0, both right hand (w[0]) and left hand (w[1]) point to the same shared buffer.
     let wires_rc = std::rc::Rc::new(wires);
     let mut w = [wires_rc.clone(), wires_rc];
-    let mut qw = vec![f.zero(); w[0].len()];
+    let mut qw = Zeroizing::new(vec![f.zero(); w[0].len()]);
 
     for round in 0..logw {
         for hand in 0..2 {
@@ -208,9 +226,10 @@ fn layer<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
             // w[0], leaving w[1] as the sole owner of the original buffer. All
             // subsequent halvings across both hands then happen in-place!
             if let Some(v) = std::rc::Rc::get_mut(&mut w[hand]) {
-                crate::dense::bind(v, &round_challenge, f);
+                crate::dense::bind_zeroizing(v, &round_challenge, f);
             } else {
-                let bound_v = crate::dense::bind_out_of_place(&w[hand], &round_challenge, f);
+                let bound_v =
+                    crate::dense::bind_out_of_place_zeroizing(&w[hand], &round_challenge, f);
                 w[hand] = std::rc::Rc::new(bound_v);
             }
             hquad.bind_h(&round_challenge, hand, f);

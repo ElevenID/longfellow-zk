@@ -86,7 +86,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         crate::parse_pk_coordinate(pky, &p256).map_err(|_| MdocProverErrorCode::InvalidInput)?,
     );
 
-    let mac_ap = crate::generate_mac_ap(rng);
+    let mac_ap = Zeroizing::new(crate::generate_mac_ap(rng));
 
     let mut tp = Transcript::new(transcript);
     let p256_2 = runtime_algebra::fp2::Fp2Field::new(&p256);
