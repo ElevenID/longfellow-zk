@@ -49,6 +49,7 @@ pub fn push_witness_hash<N: Nat<4>>(
 }
 
 #[cfg(feature = "prover")]
+#[allow(clippy::too_many_arguments)]
 pub fn push_witness_sig(
     version: usize,
     p256: &P256Field,

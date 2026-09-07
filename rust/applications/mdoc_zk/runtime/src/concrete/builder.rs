@@ -29,6 +29,25 @@ pub struct AssignmentBuilder<'a, F: core_algebra::BareField + core_algebra::Alge
     initial_allocation: Option<(*const F::E, usize)>,
 }
 
+struct TemporaryWipeGuard<'a, E> {
+    values: &'a mut Vec<E>,
+    wipe: Option<fn(&mut Vec<E>)>,
+}
+
+impl<E> TemporaryWipeGuard<'_, E> {
+    fn as_slice(&self) -> &[E] {
+        self.values
+    }
+}
+
+impl<E> Drop for TemporaryWipeGuard<'_, E> {
+    fn drop(&mut self) {
+        if let Some(wipe) = self.wipe {
+            wipe(self.values);
+        }
+    }
+}
+
 impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBuilder<'a, F> {
     pub fn new(field: &'a F) -> Self {
         Self {
@@ -57,7 +76,7 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
     }
 
     pub fn push_elt(&mut self, elt: &F::E) {
-        self.buffer.push(elt.clone());
+        self.push_buffer(elt.clone());
     }
 
     pub fn into_inner(mut self) -> Vec<F::E> {
@@ -78,15 +97,44 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
         std::mem::take(&mut self.buffer)
     }
 
-    fn wipe_temporary(&self, values: &mut Vec<F::E>) {
-        if let Some(wipe) = self.wipe {
-            wipe(values);
+    fn ensure_remaining_capacity(&self, additional: usize) {
+        if let Some((pointer, capacity)) = self.initial_allocation {
+            assert_eq!(
+                self.buffer.as_ptr(),
+                pointer,
+                "secret witness buffer reallocated"
+            );
+            assert_eq!(
+                self.buffer.capacity(),
+                capacity,
+                "secret witness capacity changed"
+            );
+            let remaining = capacity
+                .checked_sub(self.buffer.len())
+                .expect("secret witness length exceeded capacity");
+            assert!(
+                additional <= remaining,
+                "secret witness capacity exceeded before mutation"
+            );
         }
+    }
+
+    fn push_buffer(&mut self, value: F::E) {
+        self.ensure_remaining_capacity(1);
+        self.buffer.push(value);
+    }
+
+    fn extend_buffer<I>(&mut self, values: I)
+    where
+        I: ExactSizeIterator<Item = F::E>,
+    {
+        self.ensure_remaining_capacity(values.len());
+        self.buffer.extend(values);
     }
 
     #[inline(always)]
     fn push_bit(&mut self, bit: bool) {
-        self.buffer.push(if bit {
+        self.push_buffer(if bit {
             self.field.one()
         } else {
             self.field.zero()
@@ -108,7 +156,7 @@ impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBu
     }
 
     pub fn push_pad(&mut self, pad_elt: F::E, count: usize) {
-        self.buffer.extend(std::iter::repeat_n(pad_elt, count));
+        self.extend_buffer(std::iter::repeat_n(pad_elt, count));
     }
 
     #[cfg(feature = "prover")]
@@ -149,8 +197,11 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
             cur_val >>= 1;
         }
         let mut elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits[..]);
-        self.buffer.extend(elts.iter().cloned());
-        self.wipe_temporary(&mut elts);
+        let elts_guard = TemporaryWipeGuard {
+            values: &mut elts,
+            wipe: self.wipe,
+        };
+        self.extend_buffer(elts_guard.as_slice().iter().cloned());
     }
 
     #[cfg(feature = "prover")]
@@ -168,8 +219,11 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
         }
 
         let mut elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
-        self.buffer.extend(elts.iter().cloned());
-        self.wipe_temporary(&mut elts);
+        let elts_guard = TemporaryWipeGuard {
+            values: &mut elts,
+            wipe: self.wipe,
+        };
+        self.extend_buffer(elts_guard.as_slice().iter().cloned());
     }
     #[cfg(feature = "prover")]
     fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
@@ -200,8 +254,11 @@ impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::H
             cur_val >>= 1;
         }
         let mut elts = self.pack_bits_to_elements_legacy::<PLUCKER_WIDTH>(&bits[..]);
-        self.buffer.extend(elts.iter().cloned());
-        self.wipe_temporary(&mut elts);
+        let elts_guard = TemporaryWipeGuard {
+            values: &mut elts,
+            wipe: self.wipe,
+        };
+        self.extend_buffer(elts_guard.as_slice().iter().cloned());
     }
 }
 
@@ -235,7 +292,7 @@ impl AssignmentBuilder<'_, Gf2_128Field> {
                     pt = self.field.addf(&pt, &self.field.u128_to_element(basis_val));
                 }
             }
-            self.buffer.push(pt);
+            self.push_buffer(pt);
             cur_val >>= 4;
         }
     }
@@ -246,7 +303,7 @@ impl AssignmentBuilder<'_, Gf2_128Field> {
     }
 
     pub fn push_u128(&mut self, val: u128) {
-        self.buffer.push(self.field.u128_to_element(val));
+        self.push_buffer(self.field.u128_to_element(val));
     }
 
     #[cfg(feature = "prover")]
@@ -289,13 +346,20 @@ impl AssignmentBuilder<'_, P256Field> {
         let mut bytes = Zeroizing::new(val.to_bytes_le());
         bytes.resize(32, 0);
         let el = self.field.bytes_to_element(&bytes).unwrap();
-        self.buffer.push(el);
+        self.push_buffer(el);
     }
 }
 
 #[cfg(test)]
 mod api_compatibility_tests {
     use super::AssignmentBuilder;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEMPORARY_WIPE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    fn record_wipe<E>(_values: &mut Vec<E>) {
+        TEMPORARY_WIPE_CALLS.fetch_add(1, Ordering::SeqCst);
+    }
 
     #[allow(dead_code)]
     fn legacy_generic_wrapper<F>(field: &F) -> Vec<F::E>
@@ -315,12 +379,42 @@ mod api_compatibility_tests {
     }
 
     #[test]
-    #[should_panic(expected = "secret witness")]
-    fn zeroizing_builder_detects_any_capacity_growth() {
+    fn zeroizing_builder_rejects_growth_before_mutation() {
         let field = runtime_algebra::gf2_128::Gf2_128Field::new();
         let mut builder = AssignmentBuilder::new_zeroizing(&field, 1);
         builder.push_bit(false);
-        builder.push_bit(true);
-        let _ = builder.into_inner();
+        let allocation = builder.buffer.as_ptr();
+        let capacity = builder.buffer.capacity();
+        let length = builder.buffer.len();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            builder.push_bit(true);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(builder.buffer.as_ptr(), allocation);
+        assert_eq!(builder.buffer.capacity(), capacity);
+        assert_eq!(builder.buffer.len(), length);
+    }
+
+    #[test]
+    fn zeroizing_builder_wipes_plucked_temporary_on_rejected_growth() {
+        TEMPORARY_WIPE_CALLS.store(0, Ordering::SeqCst);
+        let field = runtime_algebra::gf2_128::Gf2_128Field::new();
+        let mut builder = AssignmentBuilder::new_zeroizing(&field, 0);
+        builder.wipe = Some(record_wipe);
+        let allocation = builder.buffer.as_ptr();
+        let capacity = builder.buffer.capacity();
+        let length = builder.buffer.len();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            builder.push_v8(0xa5);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(TEMPORARY_WIPE_CALLS.load(Ordering::SeqCst), 1);
+        assert_eq!(builder.buffer.as_ptr(), allocation);
+        assert_eq!(builder.buffer.capacity(), capacity);
+        assert_eq!(builder.buffer.len(), length);
     }
 }

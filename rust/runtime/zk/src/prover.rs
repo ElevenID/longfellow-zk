@@ -364,14 +364,14 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         let in_layers =
             runtime_sumcheck::eval_circuit_guarded(inputs_and_witnesses, &self.circuit, ctx.f)
                 .map_err(|error| format!("eval_circuit failed: {error}"))?;
-        let (proof, aux) = sumcheck_prove_core_guarded(
+        let (proof, unguarded_aux) = sumcheck_prove_core_guarded(
             in_layers,
             &commit_info.pad,
             &self.circuit,
             &mut ts_sumcheck_prover,
             ctx.f,
         );
-        let aux = Zeroizing::new(aux);
+        let aux = Zeroizing::new(unguarded_aux);
         let (a, b) = crate::symbolic_sumcheck_verifier::symbolic_sumcheck_verifier_core(
             n_witness,
             public_inputs,
@@ -442,6 +442,14 @@ fn new_pad<
     (pad, witness)
 }
 
+fn push_fixed_capacity<T>(values: &mut Vec<T>, value: T) {
+    assert!(
+        values.len() < values.capacity(),
+        "sumcheck pad witness capacity exceeded before mutation"
+    );
+    values.push(value);
+}
+
 fn new_pad_zeroizing<
     const W: usize,
     F: runtime_algebra::poly::InterpolationField<W>
@@ -483,8 +491,8 @@ where
             for hp_slot in &mut hp {
                 let r0 = rng.elt_field(f);
                 let r2 = rng.elt_field(f);
-                witness.push(r0.clone());
-                witness.push(r2.clone());
+                push_fixed_capacity(&mut witness, r0.clone());
+                push_fixed_capacity(&mut witness, r2.clone());
                 hp_slot.push(runtime_proto::RoundPoly {
                     evaluations: [r0, r2],
                 });
@@ -494,12 +502,12 @@ where
         // 3. wc: final layer evaluations pad
         let r0 = rng.elt_field(f);
         let r1 = rng.elt_field(f);
-        witness.push(r0.clone());
-        witness.push(r1.clone());
+        push_fixed_capacity(&mut witness, r0.clone());
+        push_fixed_capacity(&mut witness, r1.clone());
 
         // Commit to product of pads for product proof.
         let rr = f.mulf(&r0, &r1);
-        witness.push(rr);
+        push_fixed_capacity(&mut witness, rr);
 
         pad.pad.layers.push(runtime_sumcheck::LayerProof {
             hp,
@@ -518,7 +526,7 @@ where
 
 #[cfg(test)]
 mod api_compatibility_tests {
-    use super::ZkProver;
+    use super::{push_fixed_capacity, ZkProver};
     use runtime_algebra::{ElementOf, InterpolatorFactory, Subfield, ZkField};
     use runtime_random::{RandomEngine, Transcript};
 
@@ -540,5 +548,23 @@ mod api_compatibility_tests {
         let (commit, _) = prover.commit(&witness, ctx, transcript, rng, sf);
         let _ = prover.prove(public_inputs, witness, &commit, transcript, ctx);
         let _commitment = commit.com;
+    }
+
+    #[test]
+    fn pad_witness_rejects_growth_before_mutation() {
+        let mut witness = Vec::with_capacity(1);
+        push_fixed_capacity(&mut witness, 1u8);
+        let allocation = witness.as_ptr();
+        let capacity = witness.capacity();
+        let length = witness.len();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            push_fixed_capacity(&mut witness, 2u8);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(witness.as_ptr(), allocation);
+        assert_eq!(witness.capacity(), capacity);
+        assert_eq!(witness.len(), length);
     }
 }
