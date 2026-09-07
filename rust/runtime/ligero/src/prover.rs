@@ -18,8 +18,7 @@ use runtime_algebra::{
 };
 use runtime_merkle::{commit, open, MerkleCommitment};
 use runtime_proto::LigeroProof;
-use runtime_random::{RandomEngine, Transcript};
-use sha2::digest::Update;
+use runtime_random::{RandomEngine, SecureSha256, Transcript};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
@@ -135,7 +134,7 @@ impl<
         tableau: Tableau<ElementOf<F>>,
     ) -> (Self, LigeroCommitment) {
         let len = f.serialized_size_bytes();
-        let mut update_leaf_hash = |j: usize, sha: &mut sha2::Sha256| {
+        let mut update_leaf_hash = |j: usize, sha: &mut SecureSha256| {
             let col_idx = j + param.dblock;
             let mut buf = Zeroizing::new([0u8; 128]);
             for r in 0..param.nrow {
