@@ -31,18 +31,29 @@ struct Bindings<const W: usize, F: InterpolationField<W>> {
     challenges: [Vec<ElementOf<F>>; 2],
 }
 
-pub fn prove<const W: usize, F>(
+pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
     in_layers: Vec<Vec<ElementOf<F>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
     transcript: &mut Transcript,
     f: &F,
-) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
-where
-    F: InterpolationField<W> + SupportsSampling<W>,
-    ElementOf<F>: Zeroize,
-{
-    prove_guarded(Zeroizing::new(in_layers), pad, circuit, transcript, f)
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>) {
+    assert!(
+        circuit.raw.ninput >= circuit.raw.npublic_input,
+        "npublic_input ({}) exceeds ninput ({})",
+        circuit.raw.npublic_input,
+        circuit.raw.ninput
+    );
+    let inputs = &in_layers[circuit.raw.layers.len() - 1];
+    assert!(
+        inputs.len() >= circuit.raw.npublic_input,
+        "input vector too short: expected at least npublic_input ({}) entries, got {}",
+        circuit.raw.npublic_input,
+        inputs.len()
+    );
+    let public_inputs = &inputs[..circuit.raw.npublic_input];
+    transcript.write_sumcheck_statement(circuit, public_inputs, f);
+    prove_core(in_layers, pad, circuit, transcript, f)
 }
 
 pub fn prove_guarded<const W: usize, F>(
@@ -75,18 +86,68 @@ where
     prove_core_guarded(in_layers, pad, circuit, transcript, f)
 }
 
-pub fn prove_core<const W: usize, F>(
-    in_layers: Vec<Vec<ElementOf<F>>>,
+pub fn prove_core<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
+    mut in_layers: Vec<Vec<ElementOf<F>>>,
     pad: &SumcheckProof<W, F>,
     circuit: &core_proto::circuit::Circuit<F>,
     transcript: &mut Transcript,
     f: &F,
-) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>)
-where
-    F: InterpolationField<W> + SupportsSampling<W>,
-    ElementOf<F>: Zeroize,
-{
-    prove_core_guarded(Zeroizing::new(in_layers), pad, circuit, transcript, f)
+) -> (SumcheckProof<W, F>, SumcheckProofAux<W, F>) {
+    // The wire array is conceptually infinite (padded with zeros), but we normalize
+    // each layer's wire vector to contain at least one 0 to simplify the implementation
+    // and avoid handling the empty vec case in downstream binding functions.
+    for wires in &mut in_layers {
+        *wires = crate::dense::normalize(std::mem::take(wires), f);
+    }
+    let (_copy_challenges, challenges_0) = transcript.begin_circuit(f);
+    let mut bindings = Bindings {
+        logv: circuit.raw.logv,
+        nv: circuit.raw.noutput,
+        challenges: [
+            challenges_0[..circuit.raw.logv].to_vec(),
+            challenges_0[..circuit.raw.logv].to_vec(),
+        ],
+    };
+    let num_layers = circuit.raw.layers.len();
+    assert!(in_layers.len() >= num_layers && pad.layers.len() >= num_layers);
+    let layers_slice = &circuit.raw.layers[..num_layers];
+    let in_layers_slice = &mut in_layers[..num_layers];
+    let pad_layers_slice = &pad.layers[..num_layers];
+    let mut claims = [f.zero(), f.zero()];
+    let mut layers = Vec::with_capacity(num_layers);
+    let mut bound_quad = Vec::with_capacity(num_layers);
+    for i in 0..num_layers {
+        let clr = &layers_slice[i];
+        let (alpha, beta) = transcript.begin_layer(f);
+        let wires = std::mem::take(&mut in_layers_slice[i]);
+        let hquad = HQuad::bind_g(
+            clr,
+            &circuit.raw.constants,
+            bindings.logv,
+            bindings.nv,
+            &bindings.challenges[0],
+            &bindings.challenges[1],
+            &alpha,
+            &beta,
+            f,
+        );
+        let (layer_proof, new_bindings, new_claims, hquad_scalar) = layer(
+            clr.logw(),
+            clr.nw(),
+            wires,
+            &pad_layers_slice[i],
+            transcript,
+            hquad,
+            &alpha,
+            claims,
+            f,
+        );
+        bindings = new_bindings;
+        claims = new_claims;
+        bound_quad.push(hquad_scalar);
+        layers.push(layer_proof);
+    }
+    (SumcheckProof { layers }, SumcheckProofAux { bound_quad })
 }
 
 pub fn prove_core_guarded<const W: usize, F>(
@@ -143,7 +204,7 @@ where
             &beta,
             f,
         );
-        let (layer_proof, new_bindings, new_claims, hquad_scalar) = layer(
+        let (layer_proof, new_bindings, new_claims, hquad_scalar) = layer_guarded(
             clr.logw(),
             clr.nw(),
             wires,
@@ -170,7 +231,111 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn layer<const W: usize, F>(
+fn layer<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
+    logw: usize,
+    nw: usize,
+    wires: Vec<ElementOf<F>>,
+    pad: &LayerProof<W, F>,
+    transcript: &mut Transcript,
+    mut hquad: HQuad<W, F>,
+    alpha: &ElementOf<F>,
+    claims: [ElementOf<F>; 2],
+    f: &F,
+) -> (
+    LayerProof<W, F>,
+    Bindings<W, F>,
+    [ElementOf<F>; 2],
+    ElementOf<F>,
+) {
+    assert!(crate::sane_logw(logw), "logw must be sane");
+    assert!(
+        wires.len() as u64 <= (1u64 << logw),
+        "size of wires {} exceeds 2^logw {}",
+        wires.len(),
+        1u64 << logw
+    );
+    let mut challenges = [Vec::with_capacity(logw), Vec::with_capacity(logw)];
+    let mut round_polys = [Vec::with_capacity(logw), Vec::with_capacity(logw)];
+    let mut sum = claims[0].clone();
+    f.fma(&mut sum, alpha, &claims[1]);
+    let wires_rc = std::rc::Rc::new(wires);
+    let mut w = [wires_rc.clone(), wires_rc];
+    let mut qw = vec![f.zero(); w[0].len()];
+
+    for round in 0..logw {
+        for hand in 0..2 {
+            let other_hand = 1 - hand;
+            let wh_hand = &w[hand];
+            let wh_other_hand = &w[other_hand];
+            let wh_size = wh_hand.len();
+            runtime_algebra::blas::clear(&mut qw[..wh_size], f);
+            if hand == 0 {
+                for i in 0..hquad.hc.len() {
+                    let p0 = hquad.hc[i].h[0] as usize;
+                    let p1 = hquad.hc[i].h[1] as usize;
+                    f.fma(&mut qw[p0], &hquad.vc[i], &wh_other_hand[p1]);
+                }
+            } else {
+                for i in 0..hquad.hc.len() {
+                    let p0 = hquad.hc[i].h[1] as usize;
+                    let p1 = hquad.hc[i].h[0] as usize;
+                    f.fma(&mut qw[p0], &hquad.vc[i], &wh_other_hand[p1]);
+                }
+            }
+            let evaluations = quad_round_poly(wh_size, &qw[..wh_size], wh_hand, &sum, f);
+            assert!(round < MAX_LOGW);
+            let round_challenge = sample_round_challenge(
+                transcript,
+                &evaluations,
+                &pad.hp[hand][round],
+                &mut round_polys[hand],
+                &mut challenges[hand],
+                f,
+            );
+            sum = evaluations.eval_lagrange(&round_challenge, f);
+            if let Some(v) = std::rc::Rc::get_mut(&mut w[hand]) {
+                crate::dense::bind(v, &round_challenge, f);
+            } else {
+                let bound_v = crate::dense::bind_out_of_place(&w[hand], &round_challenge, f);
+                w[hand] = std::rc::Rc::new(bound_v);
+            }
+            hquad.bind_h(&round_challenge, hand, f);
+        }
+    }
+    let next_claims = [
+        crate::dense::as_scalar::<W, F>(&w[0]),
+        crate::dense::as_scalar::<W, F>(&w[1]),
+    ];
+    let hquad_scalar = hquad.scalar();
+    let mut expected_sum = next_claims[0].clone();
+    f.mul(&mut expected_sum, &next_claims[1]);
+    f.mul(&mut expected_sum, &hquad_scalar);
+    assert_eq!(
+        sum, expected_sum,
+        "reconstructed sum does not match expected"
+    );
+    let mut proof_claims = [next_claims[0].clone(), next_claims[1].clone()];
+    f.sub(&mut proof_claims[0], &pad.claims[0]);
+    f.sub(&mut proof_claims[1], &pad.claims[1]);
+    transcript.end_layer(&proof_claims, f);
+    let bindings = Bindings {
+        logv: logw,
+        nv: nw,
+        challenges,
+    };
+    (
+        LayerProof {
+            hp: round_polys,
+            claims: proof_claims,
+        },
+        bindings,
+        next_claims,
+        hquad_scalar,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layer_guarded<const W: usize, F>(
     logw: usize,
     nw: usize,
     wires: Zeroizing<Vec<ElementOf<F>>>,

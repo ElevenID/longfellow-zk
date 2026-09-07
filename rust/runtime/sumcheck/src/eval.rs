@@ -18,17 +18,33 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub type WitnessLayers<E> = Zeroizing<Vec<Vec<E>>>;
 
-pub fn eval_circuit<const W: usize, F>(
-    w: Vec<F::E>,
+pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
+    mut w: Vec<F::E>,
     circuit: &core_proto::circuit::Circuit<F>,
     f: &F,
-) -> Result<Vec<Vec<F::E>>, String>
-where
-    F: RuntimeField<W> + SerializableField,
-    F::E: Zeroize,
-{
-    let mut guarded = eval_circuit_guarded(Zeroizing::new(w), circuit, f)?;
-    Ok(std::mem::take(&mut *guarded))
+) -> Result<Vec<Vec<F::E>>, String> {
+    let nl = circuit.raw.layers.len();
+    let mut in_layers = vec![Vec::new(); nl];
+
+    for l in (0..nl).rev() {
+        let nv = if l > 0 {
+            circuit.raw.layers[l - 1].nw()
+        } else {
+            circuit.raw.noutput
+        };
+        let v = eval_quad(nv, &w, &circuit.raw.layers[l], &circuit.raw.constants, f).map_err(
+            |error| format!("Witness does not satisfy circuit constraints at layer {l}: {error}"),
+        )?;
+        in_layers[l] = w;
+        w = v;
+    }
+
+    for (i, val) in w.iter().enumerate() {
+        if !f.is_zero(val) {
+            return Err(format!("Circuit output at index {i} is not zero: {val:?}"));
+        }
+    }
+    Ok(in_layers)
 }
 
 pub fn eval_circuit_guarded<const W: usize, F>(
@@ -68,19 +84,38 @@ where
     Ok(in_layers)
 }
 
-pub fn eval_quad<const W: usize, F>(
+pub fn eval_quad<const W: usize, F: RuntimeField<W> + SerializableField>(
     nv: usize,
     w: &[F::E],
     layer: &core_proto::circuit::Layer<F>,
     constants: &[F::E],
     f: &F,
-) -> Result<Vec<F::E>, String>
-where
-    F: RuntimeField<W> + SerializableField,
-    F::E: Zeroize,
-{
-    let mut guarded = eval_quad_guarded(nv, w, layer, constants, f)?;
-    Ok(std::mem::take(&mut *guarded))
+) -> Result<Vec<F::E>, String> {
+    let mut v = vec![f.zero(); nv];
+
+    layer.try_for_each_term(constants, #[inline(always)] |term| {
+        let g = term.g as usize;
+        let r = term.h0 as usize;
+        let l = term.h1 as usize;
+        let wl = &w[l];
+        let wr = &w[r];
+        if f.is_zero(&term.k) {
+            let mut y = wl.clone();
+            f.mul(&mut y, wr);
+            if !f.is_zero(&y) {
+                return Err(format!(
+                    "gate multiplication constraint not satisfied: left_wire={l}, right_wire={r}, left_val={wl:?}, right_val={wr:?}, computed_val={y:?}"
+                ));
+            }
+        } else {
+            let mut x = term.k;
+            f.mul(&mut x, wl);
+            f.mul(&mut x, wr);
+            f.add(&mut v[g], &x);
+        }
+        Ok(())
+    })?;
+    Ok(v)
 }
 
 pub fn eval_quad_guarded<const W: usize, F>(

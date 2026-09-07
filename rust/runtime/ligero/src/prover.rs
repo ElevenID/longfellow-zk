@@ -39,8 +39,6 @@ impl<
         const W: usize,
         F: RuntimeField<W> + core_algebra::SerializableField + SupportsSampling<W>,
     > LigeroProver<W, F>
-where
-    ElementOf<F>: Zeroize,
 {
     /// The `subfield_boundary` parameter is kind of a hack.
     ///
@@ -89,6 +87,53 @@ where
             sf,
         );
 
+        Self::finish_commit(param, ts, rng, f, tableau)
+    }
+
+    /// Commitment path for maintained provers whose field elements support
+    /// non-elidable clearing. The legacy `commit` API remains source-compatible.
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_zeroizing<
+        IF: InterpolatorFactory<W, F>,
+        R: RandomEngine,
+        SF: Subfield<E = ElementOf<F>>,
+    >(
+        subfield_boundary: usize,
+        witness: &[ElementOf<F>],
+        param: LigeroParam,
+        ts: &mut Transcript,
+        quadratic_constraints: &[LigeroQuadraticConstraint],
+        make_interpolator: &IF,
+        rng: &mut R,
+        f: &F,
+        sf: &SF,
+    ) -> (Self, LigeroCommitment)
+    where
+        ElementOf<F>: Zeroize,
+    {
+        for val in &witness[..subfield_boundary] {
+            debug_assert!(sf.contains(val), "element not in subfield");
+        }
+        let tableau = layout_zeroizing(
+            subfield_boundary,
+            witness,
+            &param,
+            quadratic_constraints,
+            make_interpolator,
+            rng,
+            f,
+            sf,
+        );
+        Self::finish_commit(param, ts, rng, f, tableau)
+    }
+
+    fn finish_commit<R: RandomEngine>(
+        param: LigeroParam,
+        ts: &mut Transcript,
+        rng: &mut R,
+        f: &F,
+        tableau: Tableau<ElementOf<F>>,
+    ) -> (Self, LigeroCommitment) {
         let len = f.serialized_size_bytes();
         let mut update_leaf_hash = |j: usize, sha: &mut sha2::Sha256| {
             let col_idx = j + param.dblock;
@@ -137,8 +182,10 @@ where
         f: &F,
     ) -> Vec<ElementOf<F>> {
         let interp_a = make_interpolator.make(self.param.block, self.param.dblock);
-        let mut y = Zeroizing::new(self.tableau.row(self.param.idot)[..self.param.dblock].to_vec());
-        let mut a_ext = Zeroizing::new(vec![f.zero(); self.param.dblock]);
+        let mut y = self
+            .tableau
+            .guard_vec(self.tableau.row(self.param.idot)[..self.param.dblock].to_vec());
+        let mut a_ext = self.tableau.guard_vec(vec![f.zero(); self.param.dblock]);
 
         for i in 0..self.param.nwqrow {
             layout_aext_into(&self.param, i, a, &mut a_ext, f);
@@ -160,14 +207,15 @@ where
         u_quad: &[ElementOf<F>],
         f: &F,
     ) -> (Vec<ElementOf<F>>, Vec<ElementOf<F>>) {
-        let mut y =
-            Zeroizing::new(self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec());
+        let mut y = self
+            .tableau
+            .guard_vec(self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec());
 
         let iqx = self.param.iq;
         let iqy = iqx + self.param.nqtriples;
         let iqz = self.param.iq + 2 * self.param.nqtriples;
 
-        let mut tmp = Zeroizing::new(vec![f.zero(); self.param.dblock]);
+        let mut tmp = self.tableau.guard_vec(vec![f.zero(); self.param.dblock]);
         for (i, _u) in u_quad.iter().enumerate().take(self.param.nqtriples) {
             // y[i] += u_quad[i] * (z[i] - x[i] * y[i])
 
@@ -428,6 +476,47 @@ fn layout_quadratic_rows<
 
 #[allow(clippy::too_many_arguments)]
 fn layout<
+    const W: usize,
+    F: SupportsSampling<W>,
+    IF: InterpolatorFactory<W, F>,
+    R: RandomEngine,
+    SF: Subfield<E = ElementOf<F>>,
+>(
+    subfield_boundary: usize,
+    witness: &[ElementOf<F>],
+    param: &LigeroParam,
+    quadratic_constraints: &[LigeroQuadraticConstraint],
+    make_interpolator: &IF,
+    rng: &mut R,
+    f: &F,
+    sf: &SF,
+) -> Tableau<ElementOf<F>> {
+    let mut tableau = Tableau::new(param.nrow, param.block_enc, f.zero());
+    layout_blinding_rows(param, &mut tableau, make_interpolator, rng, f);
+    layout_witness_rows(
+        subfield_boundary,
+        witness,
+        param,
+        &mut tableau,
+        make_interpolator,
+        rng,
+        f,
+        sf,
+    );
+    layout_quadratic_rows(
+        witness,
+        param,
+        &mut tableau,
+        quadratic_constraints,
+        make_interpolator,
+        rng,
+        f,
+    );
+    tableau
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_zeroizing<
     const W: usize,
     F: SupportsSampling<W>,
     IF: InterpolatorFactory<W, F>,

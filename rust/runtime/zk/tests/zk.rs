@@ -173,8 +173,8 @@ fn test_zk_prover_verifier_end_to_end() {
     // 4. Prover prove
     let zkp = prover_inst
         .prove(
-            &w0[..prover_inst.circuit.raw.npublic_input],
-            &w0[prover_inst.circuit.raw.npublic_input..],
+            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
+            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
             &prover,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -223,6 +223,43 @@ fn test_zk_prover_verifier_end_to_end() {
     );
 
     assert!(verify_res.is_ok(), "ZK Verification failed: {verify_res:?}");
+}
+
+#[test]
+fn test_zeroizing_commit_preallocates_pad_witness_without_reallocation() {
+    let f = Gf2_128Field::new();
+    let subfield = BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
+    let term = Term {
+        k: f.one(),
+        g: 0,
+        h0: 0,
+        h1: 1,
+    };
+    let raw = make_raw_circuit(&f, 2, 0, 1, 0, &[2], &[1], vec![vec![term]]);
+    let circuit = Circuit { raw, id: [0u8; 32] };
+    let make_interpolator = Lch14InterpolatorFactory::new(&f, &subfield);
+    let mut rng = SimpleRng { state: 42 };
+    let mut transcript = Transcript::new(b"zeroizing-pad-capacity");
+    let prover = ZkProver::new(
+        circuit,
+        LigeroConfig {
+            rateinv: 4,
+            nreq: 16,
+            block_enc: 256,
+        },
+    );
+    let witness = [f.one(), f.zero()];
+
+    let (_commitment, _geometry) = prover.commit_zeroizing(
+        &witness,
+        &runtime_zk::common::ZkContext {
+            f: &f,
+            make_interpolator: &make_interpolator,
+        },
+        &mut transcript,
+        &mut rng,
+        &subfield,
+    );
 }
 
 #[test]
@@ -309,8 +346,8 @@ fn test_zk_rfc_testvector1() {
     // 4. Prover prove
     let zkp = prover_inst
         .prove(
-            &w0[..prover_inst.circuit.raw.npublic_input],
-            &w0[prover_inst.circuit.raw.npublic_input..],
+            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
+            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -628,8 +665,8 @@ fn test_zk_triple_zero_zero_zero() {
 
     let zkp = prover_inst
         .prove(
-            &w0[..prover_inst.circuit.raw.npublic_input],
-            &w0[prover_inst.circuit.raw.npublic_input..],
+            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
+            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -770,8 +807,8 @@ fn test_zk_intermediate_zero_logw() {
 
     let zkp = prover_inst
         .prove(
-            &w0[..prover_inst.circuit.raw.npublic_input],
-            &w0[prover_inst.circuit.raw.npublic_input..],
+            w0[..prover_inst.circuit.raw.npublic_input].to_vec(),
+            w0[prover_inst.circuit.raw.npublic_input..].to_vec(),
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -854,8 +891,8 @@ fn test_zk_zero_layers() {
         );
 
         let prove_res = prover_inst.prove(
-            &w0[..2],
-            &w0[2..],
+            w0[..2].to_vec(),
+            w0[2..].to_vec(),
             &commit_res,
             &mut ts_prover,
             &runtime_zk::common::ZkContext {
@@ -904,8 +941,10 @@ fn test_zk_zero_layers() {
             );
         } else {
             let first_nonzero = mask.trailing_zeros() as usize;
-            let expected_eval_error =
-                format!("Circuit output at index {first_nonzero} is not zero");
+            let expected_eval_error = format!(
+                "Circuit output at index {first_nonzero} is not zero: {:?}",
+                f.one()
+            );
             assert_eq!(
                 eval_res.unwrap_err(),
                 expected_eval_error,

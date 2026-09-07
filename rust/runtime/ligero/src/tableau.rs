@@ -60,6 +60,45 @@ impl<T> Tableau<T> {
         assert!(r < self.height);
         &mut self.data[r * self.width..(r + 1) * self.width]
     }
+
+    #[cfg(feature = "prover")]
+    pub(crate) fn guard_vec(&self, data: Vec<T>) -> GuardedVec<T> {
+        GuardedVec {
+            data,
+            wipe: self.wipe,
+        }
+    }
+}
+
+#[cfg(feature = "prover")]
+pub(crate) struct GuardedVec<T> {
+    data: Vec<T>,
+    wipe: Option<fn(&mut [T])>,
+}
+
+#[cfg(feature = "prover")]
+impl<T> std::ops::Deref for GuardedVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+#[cfg(feature = "prover")]
+impl<T> std::ops::DerefMut for GuardedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+#[cfg(feature = "prover")]
+impl<T> Drop for GuardedVec<T> {
+    fn drop(&mut self) {
+        if let Some(wipe) = self.wipe {
+            wipe(&mut self.data);
+        }
+    }
 }
 
 impl<T> Drop for Tableau<T> {
