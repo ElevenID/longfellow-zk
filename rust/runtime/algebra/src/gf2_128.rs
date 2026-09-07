@@ -17,15 +17,12 @@ pub use crate::arch::{
     Gf2_128, Gf2_128Accum,
 };
 use crate::field::{AlgebraicField, RuntimeBinaryField, RuntimeField};
-use zeroize::Zeroize;
+use zeroize::DefaultIsZeroes;
 
-impl Zeroize for Gf2_128 {
-    fn zeroize(&mut self) {
-        let mut value = self.to_u128();
-        value.zeroize();
-        *self = Self::from_u128(value);
-    }
-}
+// `Gf2_128` is a plain value type whose default value is the additive identity.
+// This marker lets `zeroize` use its guaranteed, non-optimizable write instead
+// of routing through an ordinary assignment that the compiler may elide.
+impl DefaultIsZeroes for Gf2_128 {}
 
 impl Gf2_128 {
     #[inline(always)]
