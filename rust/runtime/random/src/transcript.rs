@@ -17,9 +17,11 @@ use aes::{
     Aes256,
 };
 use core_algebra::{ElementOf, SerializableField};
-use sha2::{Digest, Sha256};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::RandomEngine;
+#[cfg(test)]
+use crate::HashCleanupObserver;
+use crate::{RandomEngine, SecureSha256};
 
 /// The tag for raw byte arrays/strings in transcript formatting.
 const TAG_BSTR: u8 = 0;
@@ -43,7 +45,7 @@ const MAX_PRF_BLOCKS: u64 = 0x10000000000;
 /// pseudorandom generator, seeding itself with the accumulated hash state.
 pub struct Transcript {
     /// SHA-256 hasher holding the current transcript state.
-    hash_accumulator: Sha256,
+    hash_accumulator: SecureSha256,
     /// Cached pseudorandom generator instantiated from the transcript hash.
     /// Resets/invalidated on every subsequent write.
     pseudorandom_generator: Option<FsPrf>,
@@ -54,21 +56,27 @@ impl Transcript {
     #[must_use]
     pub fn new(init: &[u8]) -> Self {
         let mut t = Self {
-            hash_accumulator: Sha256::new(),
+            hash_accumulator: SecureSha256::new(),
             pseudorandom_generator: None,
         };
         t.write_bytes(init);
         t
     }
 
+    #[cfg(test)]
+    fn new_with_hash_observer(init: &[u8], observer: HashCleanupObserver) -> Self {
+        let mut transcript = Self {
+            hash_accumulator: SecureSha256::new_with_cleanup_observer(observer),
+            pseudorandom_generator: None,
+        };
+        transcript.write_bytes(init);
+        transcript
+    }
+
     /// Computes and returns the 32-byte hash digest of the current transcript
     /// state.
-    fn get_hash(&self) -> [u8; 32] {
-        let tmp_hash = self.hash_accumulator.clone();
-        let digest = tmp_hash.finalize();
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&digest);
-        key
+    fn get_hash(&self) -> Zeroizing<[u8; 32]> {
+        self.hash_accumulator.clone().finish()
     }
 
     /// Appends a raw byte slice to the transcript with a byte-string tag and
@@ -129,7 +137,7 @@ impl Transcript {
     /// Serializes a field element and updates the hasher.
     fn write_untyped_elt<F: SerializableField>(&mut self, e: &ElementOf<F>, f: &F) {
         let len = f.serialized_size_bytes();
-        let mut buf = [0u8; 128];
+        let mut buf = Zeroizing::new([0u8; 128]);
         f.to_bytes_into(e, &mut buf[..len]);
         self.write_untyped(&buf[..len]);
     }
@@ -142,6 +150,12 @@ impl Clone for Transcript {
             hash_accumulator: self.hash_accumulator.clone(),
             pseudorandom_generator: self.pseudorandom_generator.clone(),
         }
+    }
+}
+
+impl Drop for Transcript {
+    fn drop(&mut self) {
+        self.pseudorandom_generator = None;
     }
 }
 
@@ -179,26 +193,48 @@ impl Prf {
 
     /// Evaluates the PRF on a 16-byte input block.
     fn eval(&self, out: &mut [u8; 16], inp: &[u8; 16]) {
-        let mut block = GenericArray::clone_from_slice(inp);
-        self.aes_cipher.encrypt_block(&mut block);
-        out.copy_from_slice(&block);
+        let mut block = Zeroizing::new(*inp);
+        self.aes_cipher
+            .encrypt_block(GenericArray::from_mut_slice(&mut *block));
+        out.copy_from_slice(&*block);
     }
 }
 
 /// Fiat-Shamir pseudorandom function generator.
 #[derive(Clone)]
 struct FsPrf {
-    cipher_engine: Prf,
+    cipher_engine: Option<Prf>,
     block_counter: u64,
     read_pointer: usize,
     output_buffer: [u8; 16],
 }
 
+impl Zeroize for FsPrf {
+    fn zeroize(&mut self) {
+        self.cipher_engine = None;
+        self.block_counter.zeroize();
+        self.read_pointer.zeroize();
+        self.output_buffer.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Prf {}
+
+impl Drop for FsPrf {
+    fn drop(&mut self) {
+        self.zeroize();
+        #[cfg(test)]
+        FS_PRF_DROPS.with(|drops| drops.set(drops.get() + 1));
+    }
+}
+
+impl ZeroizeOnDrop for FsPrf {}
+
 impl FsPrf {
     /// Instantiates a new generator from a 32-byte key.
     fn new(key: &[u8; 32]) -> Self {
         Self {
-            cipher_engine: Prf::new(key),
+            cipher_engine: Some(Prf::new(key)),
             block_counter: 0,
             read_pointer: 16,
             output_buffer: [0u8; 16],
@@ -222,10 +258,83 @@ impl FsPrf {
     /// next block number.
     fn refill(&mut self) {
         assert!(self.block_counter < MAX_PRF_BLOCKS, "too many blocks");
-        let mut inp = [0u8; 16];
+        let mut inp = Zeroizing::new([0u8; 16]);
         inp[..8].copy_from_slice(&self.block_counter.to_le_bytes());
-        self.cipher_engine.eval(&mut self.output_buffer, &inp);
+        self.cipher_engine
+            .as_ref()
+            .expect("PRF cipher must exist before zeroization")
+            .eval(&mut self.output_buffer, &inp);
         self.block_counter += 1;
         self.read_pointer = 0;
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FS_PRF_DROPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod zeroization_tests {
+    use super::{FsPrf, Prf, Transcript, FS_PRF_DROPS};
+    use crate::{HashCleanupObserver, RandomEngine};
+    use zeroize::{Zeroize, ZeroizeOnDrop};
+
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+    fn assert_explicit_zeroize<T: Zeroize>() {}
+
+    #[test]
+    fn aes_prf_and_cached_output_are_zeroizable_on_drop() {
+        assert_zeroize_on_drop::<Prf>();
+        assert_zeroize_on_drop::<FsPrf>();
+        assert_explicit_zeroize::<FsPrf>();
+
+        let mut generator = FsPrf::new(&[0xa5; 32]);
+        let output = generator.bytes(8);
+        assert!(output.iter().any(|byte| *byte != 0));
+        assert!(generator.output_buffer.iter().any(|byte| *byte != 0));
+        generator.zeroize();
+        assert!(generator.output_buffer.iter().all(|byte| *byte == 0));
+        assert_eq!(generator.block_counter, 0);
+        assert_eq!(generator.read_pointer, 0);
+    }
+
+    #[test]
+    fn transcript_write_drops_and_zeroizes_cached_prf() {
+        let mut transcript = Transcript::new(b"zeroize cached PRF");
+        let output = transcript.bytes(8);
+        assert!(output.iter().any(|byte| *byte != 0));
+        assert!(transcript.pseudorandom_generator.is_some());
+        FS_PRF_DROPS.with(|drops| drops.set(0));
+
+        transcript.write_bytes(b"invalidate");
+
+        assert!(transcript.pseudorandom_generator.is_none());
+        FS_PRF_DROPS.with(|drops| assert_eq!(drops.get(), 1));
+    }
+
+    #[test]
+    fn transcript_hash_state_is_wiped_after_finalize_and_unwind() {
+        let finalize_observer = HashCleanupObserver::default();
+        {
+            let transcript =
+                Transcript::new_with_hash_observer(&[0xa5; 31], finalize_observer.clone());
+            let digest = transcript.get_hash();
+            assert!(digest.iter().any(|byte| *byte != 0));
+            assert_eq!(finalize_observer.cleanup_count(), 1);
+        }
+        assert_eq!(finalize_observer.cleanup_count(), 2);
+
+        let unwind_observer = HashCleanupObserver::default();
+        let unwind = std::panic::catch_unwind({
+            let observer = unwind_observer.clone();
+            move || {
+                let mut transcript = Transcript::new_with_hash_observer(&[0x5a; 31], observer);
+                transcript.write_bytes(&[0xa5; 17]);
+                panic!("injected transcript hash unwind");
+            }
+        });
+        assert!(unwind.is_err());
+        assert_eq!(unwind_observer.cleanup_count(), 1);
     }
 }

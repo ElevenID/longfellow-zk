@@ -11,6 +11,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures 0.2.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -1099,6 +1100,7 @@ dependencies = [
  "runtime-proto",
  "runtime-random",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]
