@@ -15,6 +15,9 @@ jobs:
     name: Build on ${{ matrix.os_name }}
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container_image }}
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
     strategy:
       fail-fast: false
@@ -31,6 +34,13 @@ jobs:
             cpp_compiler: g++
             run_tests: true
             install_command: "sudo apt-get update -y && sudo apt-get install -y g++ cmake git libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev"
+          - os: ubuntu-24.04
+            os_name: "Ubuntu 24.04 ASan+UBSan"
+            cpp_compiler: clang++
+            cxx_flags: "-fsanitize=address,undefined -fno-omit-frame-pointer"
+            linker_flags: "-fsanitize=address,undefined"
+            run_tests: true
+            install_command: "sudo apt-get update -y && sudo apt-get install -y clang cmake git libssl-dev libzstd-dev libgtest-dev libbenchmark-dev zlib1g-dev"
           - os: ubuntu-22.04
             os_name: "Ubuntu 22.04"
             cpp_compiler: clang++
@@ -82,6 +92,8 @@ jobs:
       run: >
         cmake -B "${{ steps.strings.outputs.build-output-dir }}"
         -DCMAKE_CXX_COMPILER="${{ matrix.cpp_compiler }}"
+        -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
+        -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.linker_flags }}"
         -DCMAKE_BUILD_TYPE=Release
         -S "$GITHUB_WORKSPACE/lib"
 
