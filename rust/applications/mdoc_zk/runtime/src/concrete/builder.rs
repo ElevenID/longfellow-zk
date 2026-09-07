@@ -22,24 +22,37 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::config::{K_HASH_V256_BIT_PLUCKER, K_SHA_BIT_PLUCKER};
 use crate::config::{K_HASH_V8_BIT_PLUCKER, K_SIG_MAC_BIT_PLUCKER};
 
-pub struct AssignmentBuilder<'a, F>
-where
-    F: core_algebra::BareField + core_algebra::AlgebraicField,
-    F::E: Zeroize,
-{
+pub struct AssignmentBuilder<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> {
     pub field: &'a F,
-    pub(crate) buffer: Zeroizing<Vec<F::E>>,
+    pub(crate) buffer: Vec<F::E>,
+    wipe: Option<fn(&mut Vec<F::E>)>,
+    initial_allocation: Option<(*const F::E, usize)>,
 }
 
-impl<'a, F> AssignmentBuilder<'a, F>
-where
-    F: core_algebra::BareField + core_algebra::AlgebraicField,
-    F::E: Zeroize,
-{
+impl<'a, F: core_algebra::BareField + core_algebra::AlgebraicField> AssignmentBuilder<'a, F> {
     pub fn new(field: &'a F) -> Self {
         Self {
             field,
-            buffer: Zeroizing::new(Vec::new()),
+            buffer: Vec::new(),
+            wipe: None,
+            initial_allocation: None,
+        }
+    }
+
+    pub(crate) fn new_zeroizing(field: &'a F, capacity: usize) -> Self
+    where
+        F::E: Zeroize,
+    {
+        fn wipe<E: Zeroize>(values: &mut Vec<E>) {
+            values.zeroize();
+        }
+        let buffer = Vec::with_capacity(capacity);
+        let initial_allocation = Some((buffer.as_ptr(), buffer.capacity()));
+        Self {
+            field,
+            buffer,
+            wipe: Some(wipe::<F::E>),
+            initial_allocation,
         }
     }
 
@@ -48,7 +61,27 @@ where
     }
 
     pub fn into_inner(mut self) -> Vec<F::E> {
-        std::mem::take(&mut *self.buffer)
+        if let Some((pointer, capacity)) = self.initial_allocation {
+            assert_eq!(
+                self.buffer.as_ptr(),
+                pointer,
+                "secret witness buffer reallocated"
+            );
+            assert_eq!(
+                self.buffer.capacity(),
+                capacity,
+                "secret witness capacity changed"
+            );
+        }
+        self.wipe = None;
+        self.initial_allocation = None;
+        std::mem::take(&mut self.buffer)
+    }
+
+    fn wipe_temporary(&self, values: &mut Vec<F::E>) {
+        if let Some(wipe) = self.wipe {
+            wipe(values);
+        }
     }
 
     #[inline(always)]
@@ -91,15 +124,10 @@ where
 
 impl<F: core_algebra::BareField + core_algebra::AlgebraicField + core_algebra::HasLookupPoints>
     AssignmentBuilder<'_, F>
-where
-    F::E: Zeroize,
 {
-    fn pack_bits_to_elements<const PLUCKER_WIDTH: usize>(
-        &self,
-        bits: &[bool],
-    ) -> Zeroizing<Vec<F::E>> {
+    fn pack_bits_to_elements<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
         let num_chunks = bits.len().div_ceil(PLUCKER_WIDTH);
-        let mut elts = Zeroizing::new(Vec::with_capacity(num_chunks));
+        let mut elts = Vec::with_capacity(num_chunks);
         for i in 0..num_chunks {
             let mut v = 0usize;
             for j in 0..PLUCKER_WIDTH {
@@ -120,8 +148,9 @@ where
             *item = (cur_val & 1) != 0;
             cur_val >>= 1;
         }
-        let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits[..]);
+        let mut elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits[..]);
         self.buffer.extend(elts.iter().cloned());
+        self.wipe_temporary(&mut elts);
     }
 
     #[cfg(feature = "prover")]
@@ -138,16 +167,14 @@ where
             }
         }
 
-        let elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
+        let mut elts = self.pack_bits_to_elements::<PLUCKER_WIDTH>(&bits);
         self.buffer.extend(elts.iter().cloned());
+        self.wipe_temporary(&mut elts);
     }
     #[cfg(feature = "prover")]
-    fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(
-        &self,
-        bits: &[bool],
-    ) -> Zeroizing<Vec<F::E>> {
+    fn pack_bits_to_elements_legacy<const PLUCKER_WIDTH: usize>(&self, bits: &[bool]) -> Vec<F::E> {
         let num_chunks = bits.len().div_ceil(PLUCKER_WIDTH);
-        let mut elts = Zeroizing::new(Vec::with_capacity(num_chunks));
+        let mut elts = Vec::with_capacity(num_chunks);
         for i in 0..num_chunks {
             let mut v = 0usize;
             for j in 0..PLUCKER_WIDTH {
@@ -172,8 +199,17 @@ where
             *item = (cur_val & 1) != 0;
             cur_val >>= 1;
         }
-        let elts = self.pack_bits_to_elements_legacy::<PLUCKER_WIDTH>(&bits[..]);
+        let mut elts = self.pack_bits_to_elements_legacy::<PLUCKER_WIDTH>(&bits[..]);
         self.buffer.extend(elts.iter().cloned());
+        self.wipe_temporary(&mut elts);
+    }
+}
+
+impl<F: core_algebra::BareField + core_algebra::AlgebraicField> Drop for AssignmentBuilder<'_, F> {
+    fn drop(&mut self) {
+        if let Some(wipe) = self.wipe {
+            wipe(&mut self.buffer);
+        }
     }
 }
 
@@ -254,5 +290,37 @@ impl AssignmentBuilder<'_, P256Field> {
         bytes.resize(32, 0);
         let el = self.field.bytes_to_element(&bytes).unwrap();
         self.buffer.push(el);
+    }
+}
+
+#[cfg(test)]
+mod api_compatibility_tests {
+    use super::AssignmentBuilder;
+
+    #[allow(dead_code)]
+    fn legacy_generic_wrapper<F>(field: &F) -> Vec<F::E>
+    where
+        F: core_algebra::BareField + core_algebra::AlgebraicField,
+    {
+        AssignmentBuilder::new(field).into_inner()
+    }
+
+    #[test]
+    fn zeroizing_builder_keeps_its_initial_witness_allocation() {
+        let field = runtime_algebra::gf2_128::Gf2_128Field::new();
+        let mut builder = AssignmentBuilder::new_zeroizing(&field, 2);
+        builder.push_bit(false);
+        builder.push_bit(true);
+        assert_eq!(builder.into_inner().len(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "secret witness")]
+    fn zeroizing_builder_detects_any_capacity_growth() {
+        let field = runtime_algebra::gf2_128::Gf2_128Field::new();
+        let mut builder = AssignmentBuilder::new_zeroizing(&field, 1);
+        builder.push_bit(false);
+        builder.push_bit(true);
+        let _ = builder.into_inner();
     }
 }

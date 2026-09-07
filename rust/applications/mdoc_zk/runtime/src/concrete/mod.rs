@@ -21,12 +21,12 @@ use legacy::{push_legacy_input_hash, push_legacy_input_sig};
 #[cfg(feature = "prover")]
 use mdoc_zk_circuits::cbor::mdoc::ParsedMdoc;
 use modern::{push_modern_input_hash, push_modern_input_sig};
+#[cfg(feature = "prover")]
+use runtime_algebra::secp256r1::Secp256r1;
 use runtime_algebra::{
     gf2_128::{Gf2_128, Gf2_128Field},
     p256::{P256Element, P256Field},
 };
-#[cfg(feature = "prover")]
-use runtime_algebra::secp256r1::Secp256r1;
 
 use crate::attribute::RequestedAttribute;
 #[cfg(feature = "prover")]
@@ -39,11 +39,12 @@ pub fn push_witness_hash<N: Nat<4>>(
     attrs: &[RequestedAttribute],
     parsed: &ParsedMdoc<N>,
     mac_ap: &[[u128; 2]; 3],
+    expected_len: usize,
 ) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
     if version >= 8 {
-        modern::push_witness_hash(gf2, attrs, parsed, mac_ap)
+        modern::push_witness_hash(gf2, attrs, parsed, mac_ap, expected_len)
     } else {
-        legacy::push_witness_hash(gf2, version, attrs, parsed, mac_ap)
+        legacy::push_witness_hash(gf2, version, attrs, parsed, mac_ap, expected_len)
     }
 }
 
@@ -56,13 +57,28 @@ pub fn push_witness_sig(
     issuer_pk: &(P256Element, P256Element),
     parsed: &ParsedMdoc<runtime_algebra::RuntimeNat<4>>,
     mac_ap: &[[u128; 2]; 3],
+    expected_len: usize,
 ) -> Result<Vec<P256Element>, MdocProverErrorCode> {
     if version >= 8 {
-        modern::push_witness_sig(p256, q256, secp256r1, issuer_pk, parsed, mac_ap)
-            .map_err(|_| MdocProverErrorCode::GeneralFailure)
+        modern::push_witness_sig(
+            p256,
+            q256,
+            secp256r1,
+            issuer_pk,
+            parsed,
+            mac_ap,
+            expected_len,
+        )
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)
     } else {
         Ok(legacy::push_witness_sig(
-            p256, q256, secp256r1, issuer_pk, parsed, mac_ap,
+            p256,
+            q256,
+            secp256r1,
+            issuer_pk,
+            parsed,
+            mac_ap,
+            expected_len,
         ))
     }
 }

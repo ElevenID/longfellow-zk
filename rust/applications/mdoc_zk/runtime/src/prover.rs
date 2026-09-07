@@ -119,16 +119,28 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     }
 
     let witness_hash = Zeroizing::new(crate::push_witness_hash(
-        version, &gf2, attrs, &parsed, &mac_ap,
+        version,
+        &gf2,
+        attrs,
+        &parsed,
+        &mac_ap,
+        c_hash.raw.ninput - c_hash.raw.npublic_input,
     )?);
     let witness_sig = Zeroizing::new(crate::push_witness_sig(
-        version, &p256, &q256, &secp256r1, &issuer_pk, &parsed, &mac_ap,
+        version,
+        &p256,
+        &q256,
+        &secp256r1,
+        &issuer_pk,
+        &parsed,
+        &mac_ap,
+        c_sig.raw.ninput - c_sig.raw.npublic_input,
     )?);
 
     let sf_sig = runtime_algebra::p256::P256Subfield::new(&p256);
 
     let prover_hash = ZkProver::<2, _>::new(c_hash, config_hash);
-    let (commit_hash, geom_hash) = prover_hash.commit(
+    let (commit_hash, geom_hash) = prover_hash.commit_zeroizing(
         &witness_hash,
         &runtime_zk::common::ZkContext {
             f: &gf2,
@@ -140,7 +152,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     );
 
     let prover_sig = ZkProver::<4, _>::new(c_sig, config_sig);
-    let (commit_sig, geom_sig) = prover_sig.commit(
+    let (commit_sig, geom_sig) = prover_sig.commit_zeroizing(
         &witness_sig,
         &runtime_zk::common::ZkContext {
             f: &p256,
@@ -181,7 +193,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     );
 
     let proof_hash = prover_hash
-        .prove(
+        .prove_zeroizing(
             &hash_pub_inputs,
             &witness_hash,
             &commit_hash,
@@ -194,7 +206,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
 
     let proof_sig = prover_sig
-        .prove(
+        .prove_zeroizing(
             &sig_pub_inputs,
             &witness_sig,
             &commit_sig,

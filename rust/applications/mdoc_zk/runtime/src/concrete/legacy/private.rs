@@ -70,8 +70,9 @@ pub fn push_witness_hash<N: Nat<4>>(
     req_attrs: &[RequestedAttribute],
     parsed: &ParsedMdoc<N>,
     mac_ap: &[[u128; 2]; 3],
+    expected_len: usize,
 ) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
-    let mut builder = AssignmentBuilder::new(gf2);
+    let mut builder = AssignmentBuilder::new_zeroizing(gf2, expected_len);
 
     for nat in [
         &parsed.issuer_sig_digest,
@@ -274,8 +275,9 @@ pub fn push_witness_sig(
     issuer_pk: &(P256Element, P256Element),
     parsed: &ParsedMdoc<runtime_algebra::RuntimeNat<4>>,
     mac_ap: &[[u128; 2]; 3],
+    expected_len: usize,
 ) -> Vec<P256Element> {
-    let mut builder = AssignmentBuilder::new(p256);
+    let mut builder = AssignmentBuilder::new_zeroizing(p256, expected_len);
 
     let issuer_sig_e_elt = p256.reduce_nat(&parsed.issuer_sig_digest);
     let device_pk_elt = (
