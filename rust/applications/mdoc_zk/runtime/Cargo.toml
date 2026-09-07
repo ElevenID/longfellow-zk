@@ -31,7 +31,7 @@ sha2 = { version = "0.10", optional = true }
 mdoc-zk-artifacts = { path = "../artifacts", optional = true }
 
 [features]
-default = ["verifier", "prover", "circuit-provider"]
+default = ["verifier"]
 verifier = [
     "dep:core-proto",
     "dep:core-algebra",

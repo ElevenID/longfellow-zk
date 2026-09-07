@@ -18,7 +18,7 @@ core-algebra = { path = "../../core/algebra" }
 runtime-random = { path = "../random", features = ["testonly"] }
 
 [features]
-default = ["prover"]
+default = []
 prover = ["runtime-sumcheck/prover", "runtime-ligero/prover"]
 
 [[test]]

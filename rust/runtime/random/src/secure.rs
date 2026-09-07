@@ -13,12 +13,14 @@
 // limitations under the License.
 
 use crate::RandomEngine;
-use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
+use chacha20::ChaCha20Rng;
+use rand_core::{SeedableRng, TryRng};
+use zeroize::Zeroizing;
 
 /// A cryptographically secure random engine seeded once from the operating
-/// system CSPRNG. Construction is fallible so entropy failure can be handled
-/// before proof generation begins; byte generation cannot abort the process.
+/// system CSPRNG. The generator and its buffered output are zeroized on drop.
+/// Construction is fallible so entropy failure can be handled before proof
+/// generation begins; byte generation cannot abort the process.
 pub struct SecureRandomEngine(ChaCha20Rng);
 
 impl SecureRandomEngine {
@@ -29,9 +31,9 @@ impl SecureRandomEngine {
     fn try_from_seed_source<E>(
         seed_source: impl FnOnce(&mut [u8]) -> Result<(), E>,
     ) -> Result<Self, E> {
-        let mut seed = <ChaCha20Rng as SeedableRng>::Seed::default();
-        seed_source(&mut seed)?;
-        Ok(Self(ChaCha20Rng::from_seed(seed)))
+        let mut seed = Zeroizing::new(<ChaCha20Rng as SeedableRng>::Seed::default());
+        seed_source(seed.as_mut())?;
+        Ok(Self(ChaCha20Rng::from_seed(*seed)))
     }
 }
 
@@ -47,7 +49,9 @@ impl std::fmt::Debug for SecureRandomEngine {
 impl RandomEngine for SecureRandomEngine {
     fn bytes(&mut self, len: usize) -> Vec<u8> {
         let mut buf = vec![0u8; len];
-        self.0.fill_bytes(&mut buf);
+        self.0
+            .try_fill_bytes(&mut buf)
+            .expect("ChaCha20Rng uses an infallible generator");
         buf
     }
 }

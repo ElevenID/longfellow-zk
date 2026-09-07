@@ -10,12 +10,13 @@ workspace = true
 sha2 = "0.10.8"
 aes = "0.8.4"
 getrandom = { version = "0.3", optional = true }
-rand_chacha = { version = "0.3", optional = true }
-rand_core = { version = "0.6", optional = true }
+chacha20 = { version = "0.10.2", default-features = false, features = ["rng", "zeroize"], optional = true }
+rand_core = { version = "0.10", optional = true }
+zeroize = { version = "1.8", features = ["alloc"], optional = true }
 runtime-algebra = { path = "../algebra" }
 core-algebra = { path = "../../core/algebra" }
 
 [features]
-default = ["secure-random"]
-secure-random = ["dep:getrandom", "dep:rand_chacha", "dep:rand_core"]
+default = []
+secure-random = ["dep:getrandom", "dep:chacha20", "dep:rand_core", "dep:zeroize"]
 testonly = ["secure-random"]
