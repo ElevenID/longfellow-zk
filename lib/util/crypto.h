@@ -27,6 +27,7 @@
 #include <cstring>
 
 #include "util/panic.h"
+#include "util/secure_wipe.h"
 #include "openssl/sha.h"
 #include "openssl/evp.h"
 #include "openssl/aes.h"
@@ -41,6 +42,7 @@ constexpr size_t kPRFOutputSize = 16;
 class SHA256 {
  public:
   SHA256() { SHA256_Init(&sha_); }
+  ~SHA256() { secure_wipe_object(sha_); }
 
   // Disable copy for good measure.
   SHA256(const SHA256&) = delete;
@@ -57,7 +59,8 @@ class SHA256 {
   void CopyState(const SHA256& src) { sha_ = src.sha_; }
 
   void Update8(uint64_t x) {
-    uint8_t buf[8];
+    uint8_t buf[8] = {};
+    SecureObjectWipeGuard<uint8_t[8]> wipe_buf(buf);
     for (size_t i = 0; i < 8; ++i) {
       buf[i] = x & 0xff;
       x >>= 8;
@@ -80,7 +83,10 @@ class PRF {
     check(ret == 1, "EVP_EncryptInit_ex failed");
   }
 
-  ~PRF() { EVP_CIPHER_CTX_free(ctx_); }
+  ~PRF() {
+    EVP_CIPHER_CTX_free(ctx_);
+    ctx_ = nullptr;
+  }
 
   // Disable copy for good measure.
   PRF(const PRF&) = delete;

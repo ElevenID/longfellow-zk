@@ -19,6 +19,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <array>
+#include <cstring>
+#include <new>
+#include <stdexcept>
 
 #include "algebra/fp.h"
 #include "algebra/static_string.h"
@@ -31,6 +35,70 @@ static const Field F(
     "11579208921035624876269744694940757353008614341529031419553363130886709785"
     "3951");
 typedef Field::Elt Elt;
+
+template <size_t N>
+bool bytes_are_zero(const std::array<uint8_t, N>& bytes) {
+  for (uint8_t byte : bytes) {
+    if (byte != 0) return false;
+  }
+  return true;
+}
+
+template <size_t N>
+bool contains_bytes(const std::array<uint8_t, N>& storage,
+                    const uint8_t* pattern, size_t pattern_size) {
+  if (pattern_size == 0 || pattern_size > storage.size()) return false;
+  for (size_t i = 0; i <= storage.size() - pattern_size; ++i) {
+    if (std::memcmp(storage.data() + i, pattern, pattern_size) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+TEST(Transcript, SensitiveHashPrfAndDerivedKeyStateIsWiped) {
+  constexpr uint8_t secret[] = {0x91, 0x82, 0x73, 0x64, 0x55, 0x46,
+                                0x37, 0x28, 0x19, 0xaa, 0xbb, 0xcc};
+
+  alignas(SHA256) std::array<uint8_t, sizeof(SHA256)> sha_storage{};
+  auto* sha = ::new (sha_storage.data()) SHA256();
+  sha->Update(secret, sizeof(secret));
+  sha->~SHA256();
+  EXPECT_TRUE(bytes_are_zero(sha_storage));
+
+  std::array<uint8_t, kPRFKeySize> key{};
+  key.fill(0xa5);
+  alignas(FSPRF) std::array<uint8_t, sizeof(FSPRF)> fsprf_storage{};
+  auto* fsprf = ::new (fsprf_storage.data()) FSPRF(key.data());
+  std::array<uint8_t, 8> output{};
+  fsprf->bytes(output.data(), output.size());
+  fsprf->~FSPRF();
+  EXPECT_TRUE(bytes_are_zero(fsprf_storage));
+
+  EXPECT_THROW(
+      derive_fsprf_with_wiped_key(
+          key, [](uint8_t* derived) {
+            std::memset(derived, 0x5a, kPRFKeySize);
+          },
+          [](const uint8_t*) {
+            throw std::runtime_error("injected PRF construction failure");
+          }),
+      std::runtime_error);
+  EXPECT_TRUE(bytes_are_zero(key));
+
+  alignas(Transcript) std::array<uint8_t, sizeof(Transcript)>
+      transcript_storage{};
+  auto* transcript =
+      ::new (transcript_storage.data()) Transcript(secret, sizeof(secret));
+  transcript->bytes(output.data(), output.size());
+  EXPECT_TRUE(contains_bytes(transcript_storage, output.data(), output.size()));
+  constexpr uint8_t next_message[] = {0xd1, 0xe2, 0xf3, 0x04};
+  transcript->write(next_message, sizeof(next_message));
+  EXPECT_FALSE(contains_bytes(transcript_storage, output.data(), output.size()));
+  transcript->~Transcript();
+  EXPECT_FALSE(contains_bytes(transcript_storage, secret, sizeof(secret)));
+  EXPECT_FALSE(contains_bytes(transcript_storage, output.data(), output.size()));
+}
 
 TEST(Transcript, Write) {
   uint8_t buf1[4], buf2[4];
