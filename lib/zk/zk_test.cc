@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "algebra/convolution.h"
@@ -237,6 +238,115 @@ class TestRandomEngine : public RandomEngine {
     buf[0] = 2;
   }
 };
+
+class ThrowAfterRandomEngine : public TestRandomEngine {
+ public:
+  explicit ThrowAfterRandomEngine(size_t successful_calls)
+      : successful_calls_(successful_calls) {}
+
+  void bytes(uint8_t* buf, size_t n) override {
+    if (successful_calls_ == 0) {
+      throw std::runtime_error("injected RNG failure");
+    }
+    --successful_calls_;
+    TestRandomEngine::bytes(buf, n);
+  }
+
+ private:
+  size_t successful_calls_;
+};
+
+template <typename T>
+bool vector_storage_is_zero(const std::vector<T>& values) {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(values.data());
+  for (size_t i = 0; i < values.size() * sizeof(T); ++i) {
+    if (bytes[i] != 0) return false;
+  }
+  return true;
+}
+
+TEST(ZK, CommitRetryKeepsWitnessAllocationStable) {
+  using TestField = Fp128<>;
+  using CompilerBackend = CompilerBackend<TestField>;
+  using LogicCircuit = Logic<TestField, CompilerBackend>;
+  using EltW = LogicCircuit::EltW;
+  const TestField field;
+  std::unique_ptr<Circuit<TestField>> circuit;
+  {
+    QuadCircuit<TestField> compiler(field);
+    CompilerBackend backend(&compiler);
+    const LogicCircuit logic(&backend, field);
+    EltW n = logic.eltw_input();
+    compiler.private_input();
+    EltW m = logic.eltw_input();
+    EltW s = logic.eltw_input();
+    logic.assert_eq(
+        logic.sub(logic.mul(logic.sub(s, logic.konst(2)), logic.mul(m, m)),
+                  logic.mul(logic.sub(s, logic.konst(4)), m)),
+        logic.mul(n, logic.konst(2)));
+    circuit = compiler.mkcircuit(1);
+  }
+
+  Dense<TestField> witness(1, circuit->ninputs);
+  DenseFiller<TestField> filler(witness);
+  filler.push_back(field.one());
+  filler.push_back(field.of_scalar(45));
+  filler.push_back(field.of_scalar(5));
+  filler.push_back(field.of_scalar(6));
+  Dense<TestField> public_inputs(1, circuit->npub_in);
+  DenseFiller<TestField> public_filler(public_inputs);
+  public_filler.push_back(field.one());
+
+  using FftFactory = FFTConvolutionFactory<TestField>;
+  const auto omega =
+      field.of_string("164956748514267535023998284330560247862");
+  FftFactory fft(field, omega, 1ull << 32);
+  using RSFactory = ReedSolomonFactory<TestField, FftFactory>;
+  const RSFactory rsf(fft, field);
+  ZkProver<TestField, RSFactory> prover(*circuit, field, rsf);
+  auto* allocation = prover.witness_.data();
+  const size_t capacity = prover.witness_.capacity();
+
+  TestRandomEngine rng;
+  ZkProof<TestField> prior_proof(*circuit, 4, 6);
+  Transcript prior_transcript((uint8_t*)"prior", 5);
+  prover.commit(prior_proof, witness, prior_transcript, rng);
+  ASSERT_NE(prover.lp_.get(), nullptr);
+  ASSERT_FALSE(vector_storage_is_zero(prover.pad_.l));
+  ASSERT_EQ(prover.witness_.data(), allocation);
+  ASSERT_EQ(prover.witness_.capacity(), capacity);
+  ASSERT_EQ(prover.witness_.size(), prover.n_witness_);
+
+  ZkProof<TestField> failed_proof(*circuit, 4, 6);
+  Transcript failed_transcript((uint8_t*)"retry", 5);
+  ThrowAfterRandomEngine throwing_rng(1);
+  EXPECT_THROW(
+      prover.commit(failed_proof, witness, failed_transcript, throwing_rng),
+      std::runtime_error);
+  ASSERT_EQ(prover.witness_.data(), allocation);
+  ASSERT_EQ(prover.witness_.capacity(), capacity);
+  ASSERT_EQ(prover.witness_.size(), prover.n_witness_);
+  for (const auto& value : prover.witness_) {
+    EXPECT_EQ(value, field.zero());
+  }
+  EXPECT_TRUE(vector_storage_is_zero(prover.pad_.l));
+  EXPECT_TRUE(vector_storage_is_zero(prover.lqc_));
+  EXPECT_EQ(prover.lp_.get(), nullptr);
+
+  ZkProof<TestField> fresh_proof(*circuit, 4, 6);
+  Transcript fresh_transcript((uint8_t*)"fresh", 5);
+  prover.commit(fresh_proof, witness, fresh_transcript, rng);
+  EXPECT_EQ(prover.witness_.data(), allocation);
+  EXPECT_EQ(prover.witness_.capacity(), capacity);
+  EXPECT_EQ(prover.witness_.size(), prover.n_witness_);
+  EXPECT_TRUE(prover.prove(fresh_proof, witness, fresh_transcript));
+
+  ZkVerifier<TestField, RSFactory> verifier(*circuit, rsf, 4, 6, field);
+  Transcript verifier_transcript((uint8_t*)"fresh", 5);
+  verifier.recv_commitment(fresh_proof, verifier_transcript);
+  EXPECT_TRUE(
+      verifier.verify(fresh_proof, public_inputs, verifier_transcript));
+}
 
 // This Test method generates the examples used in our RFC for a circuit,
 // for a sumcheck run, and a Ligero run.
