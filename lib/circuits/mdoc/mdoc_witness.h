@@ -140,7 +140,7 @@ class ParsedMdoc {
     // garbage collected.
     CborDoc root;
     bool ok = root.decode(resp, len, np, 0);
-    if (!ok) {
+    if (!ok || np != len) {
       log(ERROR, "Failed to decode root");
       return MDOC_PROVER_ROOT_DECODING_FAILURE;
     }
@@ -200,19 +200,21 @@ class ParsedMdoc {
         size_t pos = tattr_str.pos;
         size_t end = pos + tattr_str.len;
         CborDoc er;
-        if (!er.decode(resp, end, pos, 0)) {
+        if (!er.decode(resp, end, pos, 0) || pos != end) {
           return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
         }
 
         auto ei = er.lookup(resp, 17, (uint8_t*)"elementIdentifier", di);
-        if (ei.key == nullptr) return MDOC_PROVER_ATTRIBUTE_EI_MISSING;
+        if (ei.key == nullptr || !ei.val->is_variant(TEXT))
+          return MDOC_PROVER_ATTRIBUTE_EI_MISSING;
         auto ev = er.lookup(resp, 12, (uint8_t*)"elementValue", di);
         if (ev.key == nullptr) return MDOC_PROVER_ATTRIBUTE_EV_MISSING;
         auto digid = er.lookup(resp, 8, (uint8_t*)"digestID", di);
         if (digid.key == nullptr || !digid.val->is_variant(UNSIGNED))
           return MDOC_PROVER_ATTRIBUTE_DID_MISSING;
         auto rand = er.lookup(resp, 6, (uint8_t*)"random", di);
-        if (rand.key == nullptr) return MDOC_PROVER_ATTRIBUTE_RANDOM_MISSING;
+        if (rand.key == nullptr || !rand.val->is_variant(BYTES))
+          return MDOC_PROVER_ATTRIBUTE_RANDOM_MISSING;
 
         // TODO: Handle array or map, recursive mdoc data types.
         // For now, this circuit only matches unit types.
@@ -220,18 +222,35 @@ class ParsedMdoc {
           continue;
         }
 
+        size_t ev_encoded_pos = 0;
+        size_t ev_encoded_len = 0;
+        if (!ev.val->encoded_span(ev_encoded_pos, ev_encoded_len) ||
+            ev_encoded_pos > len || ev_encoded_len > len - ev_encoded_pos ||
+            !cbor_validate(resp + ev_encoded_pos, ev_encoded_len)) {
+          return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
+        }
+
+        size_t id_pos = 0;
+        size_t id_len = 0;
+        size_t value_pos = 0;
+        size_t value_len = 0;
+        if (!ei.val->value_span(id_pos, id_len) ||
+            !ev.val->value_span(value_pos, value_len)) {
+          return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
+        }
+
         attributes_.push_back((FullAttribute){
             //  For the elementIdentifier, the [1] index is the position and
             //  length of the value.
-            ei.val->position(),
-            ei.val->length(),
+            id_pos,
+            id_len,
             // For version 7, record the index of the elementValue key, i.e.,
             // ev[0], instead of the value. This makes it easier to handle
             // different orderings of the elementIdentifier and elementValue
             // keys in the CBOR encoding. Previous versions of the circuit did
             // not use the ev[1] index, because they assumed canonical order.
             ev.key->position(),
-            ev.val->length(),
+            value_len,
             digid.key->position(),
             digid.key->length() + digid.val->length() + 1,
             rand.key->position(),
@@ -259,10 +278,12 @@ class ParsedMdoc {
     // Then parse tagged mso. Skip 5 bytes to skip the D8 18 59 <len2>.
     if (!tmso->is_variant(BYTES)) return MDOC_PROVER_MSO_MISSING;
     CborDoc::CborString tmso_str = tmso->as_bytes();
+    if (tmso_str.len <= 5) return MDOC_PROVER_MSO_DECODING_FAILURE;
     const uint8_t* pmso = resp + tmso_str.pos + 5;
     size_t pos = 0;
     CborDoc mso;
-    if (!mso.decode(pmso, tmso_str.len - 5, pos, 0))
+    const size_t mso_len = tmso_str.len - 5;
+    if (!mso.decode(pmso, mso_len, pos, 0) || pos != mso_len)
       return MDOC_PROVER_MSO_DECODING_FAILURE;
     auto nv = mso.lookup(pmso, kValidityInfoLen, kValidityInfoID, valid_.ndx);
     if (nv.key == nullptr) return MDOC_PROVER_VALIDITY_INFO_MISSING;
