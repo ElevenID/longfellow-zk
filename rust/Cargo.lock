@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-ligero"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "core-algebra",
  "runtime-algebra",
@@ -1129,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-sumcheck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "compile-algebra",
  "compile-compiler",
@@ -1145,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-zk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "core-algebra",
  "core-proto",
