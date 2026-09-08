@@ -607,6 +607,7 @@ TEST(CborValidate, ValidInputs) {
 TEST(CborValidate, InvalidInputs) {
   // Null/Empty
   EXPECT_FALSE(proofs::cbor_validate(nullptr, 0));
+  EXPECT_FALSE(proofs::cbor_validate(nullptr, 1));
 
   // Array (not allowed)
   EXPECT_FALSE(proofs::cbor_validate((const uint8_t[]){0x80}, 1));

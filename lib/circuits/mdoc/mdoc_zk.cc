@@ -396,8 +396,8 @@ bool sameNamespace(const RequestedAttribute attrs[/*n*/], size_t n) {
 // - Fulldate (TAG 1004) -> must be 14 bytes total
 // - Tdate (TAG 0) -> must be 22 bytes total
 bool cbor_validate(const uint8_t* in, size_t len) {
-  uint8_t dummy[1];  // For 0-length checks if needed, though len > 0 usually
-  const uint8_t* buf = in ? in : dummy;
+  if (in == nullptr) return false;
+  const uint8_t* buf = in;
   size_t pos = 0;
   CborDoc doc;
 
