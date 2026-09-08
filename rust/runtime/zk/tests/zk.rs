@@ -952,7 +952,7 @@ fn test_zk_zero_layers() {
             );
             assert_eq!(
                 prove_res.unwrap_err(),
-                format!("eval_circuit failed: {expected_eval_error}"),
+                format!("eval_circuit failed: Circuit output at index {first_nonzero} is not zero"),
                 "prove failed at the wrong check for input mask {mask}"
             );
         }
