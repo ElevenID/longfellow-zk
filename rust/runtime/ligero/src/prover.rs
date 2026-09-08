@@ -56,11 +56,7 @@ impl<
     /// If you don't know better, set `subfield_boundary` = 0 which
     /// trivially works for any input.
     #[allow(clippy::too_many_arguments)]
-    pub fn commit<
-        IF: InterpolatorFactory<W, F>,
-        R: RandomEngine,
-        SF: Subfield<E = ElementOf<F>>,
-    >(
+    pub fn commit<IF: InterpolatorFactory<W, F>, R: RandomEngine, SF: Subfield<E = ElementOf<F>>>(
         subfield_boundary: usize,
         witness: &[ElementOf<F>],
         param: LigeroParam,
@@ -70,12 +66,15 @@ impl<
         rng: &mut R,
         f: &F,
         sf: &SF,
-    ) -> (Self, LigeroCommitment) {
+    ) -> (Self, LigeroCommitment)
+    where
+        ElementOf<F>: Zeroize,
+    {
         for val in &witness[..subfield_boundary] {
             debug_assert!(sf.contains(val), "element not in subfield");
         }
 
-        let tableau = layout(
+        let tableau = layout_zeroizing(
             subfield_boundary,
             witness,
             &param,
@@ -89,8 +88,7 @@ impl<
         Self::finish_commit(param, ts, rng, f, tableau)
     }
 
-    /// Commitment path for maintained provers whose field elements support
-    /// non-elidable clearing. The legacy `commit` API remains source-compatible.
+    /// Backward-compatible alias for the ordinary zeroizing commitment path.
     #[allow(clippy::too_many_arguments)]
     pub fn commit_zeroizing<
         IF: InterpolatorFactory<W, F>,
@@ -110,20 +108,17 @@ impl<
     where
         ElementOf<F>: Zeroize,
     {
-        for val in &witness[..subfield_boundary] {
-            debug_assert!(sf.contains(val), "element not in subfield");
-        }
-        let tableau = layout_zeroizing(
+        Self::commit(
             subfield_boundary,
             witness,
-            &param,
+            param,
+            ts,
             quadratic_constraints,
             make_interpolator,
             rng,
             f,
             sf,
-        );
-        Self::finish_commit(param, ts, rng, f, tableau)
+        )
     }
 
     fn finish_commit<R: RandomEngine>(
@@ -471,47 +466,6 @@ fn layout_quadratic_rows<
         interp.interpolate(tableau.row_mut(iqy + i));
         interp.interpolate(tableau.row_mut(iqz + i));
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn layout<
-    const W: usize,
-    F: SupportsSampling<W>,
-    IF: InterpolatorFactory<W, F>,
-    R: RandomEngine,
-    SF: Subfield<E = ElementOf<F>>,
->(
-    subfield_boundary: usize,
-    witness: &[ElementOf<F>],
-    param: &LigeroParam,
-    quadratic_constraints: &[LigeroQuadraticConstraint],
-    make_interpolator: &IF,
-    rng: &mut R,
-    f: &F,
-    sf: &SF,
-) -> Tableau<ElementOf<F>> {
-    let mut tableau = Tableau::new(param.nrow, param.block_enc, f.zero());
-    layout_blinding_rows(param, &mut tableau, make_interpolator, rng, f);
-    layout_witness_rows(
-        subfield_boundary,
-        witness,
-        param,
-        &mut tableau,
-        make_interpolator,
-        rng,
-        f,
-        sf,
-    );
-    layout_quadratic_rows(
-        witness,
-        param,
-        &mut tableau,
-        quadratic_constraints,
-        make_interpolator,
-        rng,
-        f,
-    );
-    tableau
 }
 
 #[allow(clippy::too_many_arguments)]

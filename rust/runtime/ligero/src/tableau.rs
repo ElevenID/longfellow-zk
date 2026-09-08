@@ -20,18 +20,6 @@ pub struct Tableau<T> {
 }
 
 impl<T> Tableau<T> {
-    pub fn new(height: usize, width: usize, default: T) -> Self
-    where
-        T: Clone,
-    {
-        Self {
-            data: vec![default; height * width],
-            width,
-            height,
-            wipe: None,
-        }
-    }
-
     pub fn new_zeroizing(height: usize, width: usize, default: T) -> Self
     where
         T: Clone + zeroize::Zeroize,
