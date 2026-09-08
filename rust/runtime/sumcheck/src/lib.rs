@@ -156,6 +156,7 @@ pub(crate) mod test_field {
     pub(crate) struct TrackedElement {
         value: u8,
         wipes: Option<Arc<AtomicUsize>>,
+        clone_wipes: Option<Arc<AtomicUsize>>,
     }
 
     impl TrackedElement {
@@ -163,6 +164,19 @@ pub(crate) mod test_field {
             Self {
                 value: value & 1,
                 wipes: Some(Arc::clone(wipes)),
+                clone_wipes: None,
+            }
+        }
+
+        pub(crate) fn secret_with_derived_wipes(
+            value: u8,
+            input_wipes: &Arc<AtomicUsize>,
+            derived_wipes: &Arc<AtomicUsize>,
+        ) -> Self {
+            Self {
+                value: value & 1,
+                wipes: Some(Arc::clone(input_wipes)),
+                clone_wipes: Some(Arc::clone(derived_wipes)),
             }
         }
 
@@ -170,15 +184,38 @@ pub(crate) mod test_field {
             Self {
                 value: value & 1,
                 wipes: None,
+                clone_wipes: None,
+            }
+        }
+
+        fn derived(value: u8, wipes: Option<Arc<AtomicUsize>>) -> Self {
+            Self {
+                value: value & 1,
+                wipes: wipes.clone(),
+                clone_wipes: wipes,
+            }
+        }
+
+        fn lineage(&self) -> Option<&Arc<AtomicUsize>> {
+            self.clone_wipes.as_ref().or(self.wipes.as_ref())
+        }
+
+        fn inherit_lineage(&mut self, other: &Self) {
+            let Some(wipes) = other.lineage() else {
+                return;
+            };
+            if self.wipes.is_none() {
+                self.wipes = Some(Arc::clone(wipes));
+            }
+            if self.clone_wipes.is_none() {
+                self.clone_wipes = Some(Arc::clone(wipes));
             }
         }
     }
 
     impl Clone for TrackedElement {
         fn clone(&self) -> Self {
-            // Clones are deliberately untracked so a test observes the exact
-            // input allocation moved into a zeroizing API, not scratch values.
-            Self::plain(self.value)
+            Self::derived(self.value, self.clone_wipes.clone())
         }
     }
 
@@ -202,6 +239,7 @@ pub(crate) mod test_field {
             if let Some(wipes) = self.wipes.take() {
                 wipes.fetch_add(1, Ordering::SeqCst);
             }
+            self.clone_wipes = None;
         }
     }
 
@@ -222,20 +260,25 @@ pub(crate) mod test_field {
         }
 
         fn add(&self, a: &mut Self::E, b: &Self::E) {
+            a.inherit_lineage(b);
             a.value ^= b.value;
         }
 
         fn sub(&self, a: &mut Self::E, b: &Self::E) {
+            a.inherit_lineage(b);
             a.value ^= b.value;
         }
 
         fn mul(&self, a: &mut Self::E, b: &Self::E) {
+            a.inherit_lineage(b);
             a.value &= b.value;
         }
 
         fn invert(&self, a: &Self::E) -> Self::E {
             assert_eq!(a.value, 1, "zero has no inverse");
-            self.one()
+            let mut inverse = self.one();
+            inverse.inherit_lineage(a);
+            inverse
         }
     }
 
@@ -265,18 +308,39 @@ pub(crate) mod test_field {
     }
 
     impl RuntimeField<1> for TrackedField {
-        type Accum = u8;
+        type Accum = TrackedAccum;
 
         fn zero_accum(&self) -> Self::Accum {
-            0
+            TrackedAccum {
+                value: 0,
+                wipes: None,
+            }
         }
 
         fn mac(&self, accumulator: &mut Self::Accum, x: &Self::E, y: &Self::E) {
-            *accumulator ^= x.value & y.value;
+            accumulator.value ^= x.value & y.value;
+            if accumulator.wipes.is_none() {
+                accumulator.wipes = x.lineage().or_else(|| y.lineage()).map(Arc::clone);
+            }
         }
 
         fn accum_reduce(&self, accumulator: &Self::Accum) -> Self::E {
-            TrackedElement::plain(*accumulator)
+            TrackedElement::derived(accumulator.value, accumulator.wipes.clone())
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub(crate) struct TrackedAccum {
+        value: u8,
+        wipes: Option<Arc<AtomicUsize>>,
+    }
+
+    impl Zeroize for TrackedAccum {
+        fn zeroize(&mut self) {
+            self.value = 0;
+            if let Some(wipes) = self.wipes.take() {
+                wipes.fetch_add(1, Ordering::SeqCst);
+            }
         }
     }
 

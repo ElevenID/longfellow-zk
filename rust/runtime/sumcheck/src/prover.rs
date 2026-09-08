@@ -19,7 +19,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     hquad::HQuad,
-    poly::{Poly, QuadRoundPoly, QuadWirePoly},
+    poly::Poly,
     proof::{LayerProof, SumcheckProof, MAX_LOGW},
     transcript::TranscriptSumcheck,
     IntoWitnessLayers, SumcheckProofAux, ZeroizingVec,
@@ -29,6 +29,56 @@ struct Bindings<const W: usize, F: InterpolationField<W>> {
     logv: usize,
     nv: usize,
     challenges: [Vec<ElementOf<F>>; 2],
+}
+
+struct SecretPoly<const N: usize, const W: usize, F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    value: Poly<N, W, F>,
+}
+
+impl<const N: usize, const W: usize, F> SecretPoly<N, W, F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    fn new(value: Poly<N, W, F>) -> Self {
+        Self { value }
+    }
+}
+
+impl<const N: usize, const W: usize, F> std::ops::Deref for SecretPoly<N, W, F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    type Target = Poly<N, W, F>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<const N: usize, const W: usize, F> std::ops::DerefMut for SecretPoly<N, W, F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+impl<const N: usize, const W: usize, F> Drop for SecretPoly<N, W, F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    fn drop(&mut self) {
+        self.value.evaluations.zeroize();
+    }
 }
 
 pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
@@ -122,7 +172,7 @@ where
     let in_layers_slice = &mut in_layers[..num_layers];
     let pad_layers_slice = &pad.layers[..num_layers];
 
-    let mut claims = [f.zero(), f.zero()];
+    let mut claims = Zeroizing::new([f.zero(), f.zero()]);
     let mut layers = Vec::with_capacity(num_layers);
     let mut bound_quad = ZeroizingVec::new(Vec::with_capacity(num_layers));
 
@@ -171,12 +221,12 @@ fn layer_guarded<const W: usize, F>(
     transcript: &mut Transcript,
     mut hquad: HQuad<W, F>,
     alpha: &ElementOf<F>,
-    claims: [ElementOf<F>; 2],
+    claims: Zeroizing<[ElementOf<F>; 2]>,
     f: &F,
 ) -> (
     LayerProof<W, F>,
     Bindings<W, F>,
-    [ElementOf<F>; 2],
+    Zeroizing<[ElementOf<F>; 2]>,
     ElementOf<F>,
 )
 where
@@ -192,8 +242,10 @@ where
     );
     let mut challenges = [Vec::with_capacity(logw), Vec::with_capacity(logw)];
     let mut round_polys = [Vec::with_capacity(logw), Vec::with_capacity(logw)];
-    let mut sum = claims[0].clone();
-    f.fma(&mut sum, alpha, &claims[1]);
+    let mut sum = Zeroizing::new(claims[0].clone());
+    let mut alpha_claim = Zeroizing::new(alpha.clone());
+    f.mul(&mut alpha_claim, &claims[1]);
+    f.add(&mut sum, &alpha_claim);
 
     // Wrap the initial wire vector in an Rc to avoid cloning the massive input slice.
     // At round 0, both right hand (w[0]) and left hand (w[1]) point to the same shared buffer.
@@ -228,7 +280,7 @@ where
                 }
             }
 
-            let evaluations = quad_round_poly(wh_size, &qw[..wh_size], wh_hand, &sum, f);
+            let evaluations = quad_round_poly(wh_size, &qw[..wh_size], wh_hand, &*sum, f);
 
             assert!(round < MAX_LOGW);
             let round_challenge = sample_round_challenge(
@@ -239,7 +291,9 @@ where
                 &mut challenges[hand],
                 f,
             );
-            sum = evaluations.eval_lagrange(&round_challenge, f);
+            let next_sum = eval_lagrange_zeroizing(&evaluations, &round_challenge, f);
+            sum.zeroize();
+            *sum = next_sum;
 
             // In-place vs out-of-place binding optimization:
             // When w[hand] has strong count 1 (sole owner), get_mut returns Some(v) and we bind
@@ -259,13 +313,12 @@ where
         }
     }
 
-    let next_claims = [
-        crate::dense::as_scalar::<W, F>(&w[0]),
-        crate::dense::as_scalar::<W, F>(&w[1]),
-    ];
+    let next_claim_0 = Zeroizing::new(crate::dense::as_scalar::<W, F>(&w[0]));
+    let next_claim_1 = Zeroizing::new(crate::dense::as_scalar::<W, F>(&w[1]));
+    let next_claims = Zeroizing::new([(*next_claim_0).clone(), (*next_claim_1).clone()]);
 
     let hquad_scalar = hquad.scalar();
-    let mut expected_sum = next_claims[0].clone();
+    let mut expected_sum = Zeroizing::new(next_claims[0].clone());
     f.mul(&mut expected_sum, &next_claims[1]);
     f.mul(&mut expected_sum, &hquad_scalar);
     assert_eq!(
@@ -273,10 +326,11 @@ where
         "reconstructed sum does not match expected"
     );
 
-    let mut proof_claims = [next_claims[0].clone(), next_claims[1].clone()];
+    let mut proof_claims = Zeroizing::new([next_claims[0].clone(), next_claims[1].clone()]);
     f.sub(&mut proof_claims[0], &pad.claims[0]);
     f.sub(&mut proof_claims[1], &pad.claims[1]);
     transcript.end_layer(&proof_claims, f);
+    let public_proof_claims = [proof_claims[0].clone(), proof_claims[1].clone()];
 
     let bindings = Bindings {
         logv: logw,
@@ -287,7 +341,7 @@ where
     (
         LayerProof {
             hp: round_polys,
-            claims: proof_claims, // padded
+            claims: public_proof_claims, // padded and public
         },
         bindings,
         next_claims,
@@ -300,13 +354,24 @@ where
 #[inline]
 fn sample_round_challenge<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
     transcript: &mut Transcript,
-    unpadded_poly: &Poly<3, W, F>,
+    unpadded_poly: &SecretPoly<3, W, F>,
     pad_poly: &crate::proof::RoundPoly<W, F>,
     round_polys: &mut Vec<crate::proof::RoundPoly<W, F>>,
     challenges: &mut Vec<ElementOf<F>>,
     f: &F,
-) -> ElementOf<F> {
-    let poly_padded = unpadded_poly.to_wire().sub(pad_poly, f);
+) -> ElementOf<F>
+where
+    ElementOf<F>: Zeroize,
+{
+    let mut unmasked_wire = Zeroizing::new([
+        unpadded_poly.evaluations[0].clone(),
+        unpadded_poly.evaluations[2].clone(),
+    ]);
+    f.sub(&mut unmasked_wire[0], &pad_poly.evaluations[0]);
+    f.sub(&mut unmasked_wire[1], &pad_poly.evaluations[1]);
+    let poly_padded = crate::proof::RoundPoly {
+        evaluations: [unmasked_wire[0].clone(), unmasked_wire[1].clone()],
+    };
     let round_challenge = transcript.round(&poly_padded, f);
     round_polys.push(poly_padded);
     challenges.push(round_challenge.clone());
@@ -325,16 +390,21 @@ fn quad_round_poly<const W: usize, F: InterpolationField<W>>(
     witness_values: &[ElementOf<F>],
     sum: &ElementOf<F>,
     f: &F,
-) -> Poly<3, W, F> {
+) -> SecretPoly<3, W, F>
+where
+    ElementOf<F>: Zeroize,
+{
     let num_pairs = num_variables / 2;
-    let mut accum_a0 = f.zero_accum();
-    let mut accum_a2 = f.zero_accum();
+    let mut accum_a0 = Zeroizing::new(f.zero_accum());
+    let mut accum_a2 = Zeroizing::new(f.zero_accum());
 
     for i in 0..num_pairs {
         let idx = 2 * i;
         f.mac(&mut accum_a0, &qw[idx], &witness_values[idx]);
-        let dqw = f.subf(&qw[idx + 1], &qw[idx]);
-        let dw = f.subf(&witness_values[idx + 1], &witness_values[idx]);
+        let mut dqw = Zeroizing::new(qw[idx + 1].clone());
+        f.sub(&mut dqw, &qw[idx]);
+        let mut dw = Zeroizing::new(witness_values[idx + 1].clone());
+        f.sub(&mut dw, &witness_values[idx]);
         f.mac(&mut accum_a2, &dqw, &dw);
     }
 
@@ -344,31 +414,62 @@ fn quad_round_poly<const W: usize, F: InterpolationField<W>>(
         f.mac(&mut accum_a2, &qw[last], &witness_values[last]);
     }
 
-    let a0 = f.accum_reduce(&accum_a0);
-    let a2 = f.accum_reduce(&accum_a2);
+    let a0 = Zeroizing::new(f.accum_reduce(&accum_a0));
+    let a2 = Zeroizing::new(f.accum_reduce(&accum_a2));
 
     // g(0) = a0
     // g(1) = sum - a0
-    let mut g1 = sum.clone();
+    let mut g1 = Zeroizing::new((*sum).clone());
     f.sub(&mut g1, &a0);
 
     // c1 = g(1) - a0 - a2 = sum - 2*a0 - a2
-    let mut c1 = g1.clone();
+    let mut c1 = Zeroizing::new((*g1).clone());
     f.sub(&mut c1, &a0);
     f.sub(&mut c1, &a2);
 
     // Evaluate g(2) = a2*pt(2)^2 + c1*pt(2) + a0 using Horner's method for binary field
     // compatibility:
     let pt2 = f.poly_evaluation_point(2);
-    let mut g2 = a2.clone();
+    let mut g2 = Zeroizing::new((*a2).clone());
     f.mul(&mut g2, &pt2);
     f.add(&mut g2, &c1);
     f.mul(&mut g2, &pt2);
     f.add(&mut g2, &a0);
 
-    Poly {
-        evaluations: [a0, g1, g2],
+    SecretPoly::new(Poly {
+        evaluations: [(*a0).clone(), (*g1).clone(), (*g2).clone()],
+    })
+}
+
+fn eval_lagrange_zeroizing<const N: usize, const W: usize, F>(
+    polynomial: &SecretPoly<N, W, F>,
+    x: &ElementOf<F>,
+    f: &F,
+) -> ElementOf<F>
+where
+    F: InterpolationField<W>,
+    ElementOf<F>: Zeroize,
+{
+    assert!(N > 0, "polynomial must contain at least one evaluation");
+    let mut coefficients = SecretPoly::new(polynomial.value.clone());
+    for i in 1..N {
+        for k in (i..N).rev() {
+            let previous = Zeroizing::new(coefficients.evaluations[k - 1].clone());
+            f.sub(&mut coefficients.evaluations[k], &previous);
+            let denominator = Zeroizing::new(f.newton_denominator(k, i));
+            f.mul(&mut coefficients.evaluations[k], &denominator);
+        }
     }
+
+    let mut result = Zeroizing::new(coefficients.evaluations[N - 1].clone());
+    for i in (0..(N - 1)).rev() {
+        let mut delta = Zeroizing::new(x.clone());
+        let evaluation_point = Zeroizing::new(f.poly_evaluation_point(i));
+        f.sub(&mut delta, &evaluation_point);
+        f.mul(&mut result, &delta);
+        f.add(&mut result, &coefficients.evaluations[i]);
+    }
+    (*result).clone()
 }
 
 #[cfg(test)]
@@ -381,11 +482,13 @@ mod secure_default_tests {
         },
     };
 
-    use core_proto::circuit::{Circuit, Layer, RawCircuit};
+    use core_algebra::AlgebraicField;
+    use core_proto::circuit::{Circuit, Layer, RawCircuit, TermDelta};
     use runtime_random::Transcript;
 
-    use super::{prove, prove_core};
+    use super::{prove, prove_core, quad_round_poly};
     use crate::{
+        proof::{LayerProof, RoundPoly},
         test_field::{TrackedElement, TrackedField},
         SumcheckProof,
     };
@@ -402,6 +505,40 @@ mod secure_default_tests {
                 layers,
             },
             id: [0u8; 32],
+        }
+    }
+
+    fn two_round_circuit(field: &TrackedField) -> Circuit<TrackedField> {
+        let layer = Layer::new(
+            4,
+            2,
+            vec![TermDelta {
+                g: 0,
+                h: [0, 0],
+                k_index: 0,
+            }],
+            vec![vec![0]],
+            vec![0],
+        );
+        let mut circuit = circuit(vec![layer]);
+        circuit.raw.ninput = 4;
+        circuit.raw.noutput = 1;
+        circuit.raw.constants.push(field.one());
+        circuit
+    }
+
+    fn zero_pad(field: &TrackedField, rounds: usize) -> SumcheckProof<1, TrackedField> {
+        let round = || RoundPoly {
+            evaluations: [field.zero(), field.zero()],
+        };
+        SumcheckProof {
+            layers: vec![LayerProof {
+                hp: [
+                    (0..rounds).map(|_| round()).collect(),
+                    (0..rounds).map(|_| round()).collect(),
+                ],
+                claims: [field.zero(), field.zero()],
+            }],
         }
     }
 
@@ -448,5 +585,78 @@ mod secure_default_tests {
         }));
         assert!(core_unwind.is_err());
         assert_eq!(core_unwind_wipes.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unmasked_round_polynomial_wipes_derived_evaluations_on_drop() {
+        let field = TrackedField;
+        let inputs = Arc::new(AtomicUsize::new(0));
+        let derived = Arc::new(AtomicUsize::new(0));
+        let qw = vec![
+            TrackedElement::secret_with_derived_wipes(1, &inputs, &derived),
+            TrackedElement::secret_with_derived_wipes(0, &inputs, &derived),
+        ];
+        let witness = vec![
+            TrackedElement::secret_with_derived_wipes(1, &inputs, &derived),
+            TrackedElement::secret_with_derived_wipes(0, &inputs, &derived),
+        ];
+        let sum = TrackedElement::secret_with_derived_wipes(1, &inputs, &derived);
+
+        let polynomial = quad_round_poly::<1, _>(2, &qw, &witness, &sum, &field);
+        let before_drop = derived.load(Ordering::SeqCst);
+        drop(polynomial);
+        assert_eq!(
+            derived.load(Ordering::SeqCst) - before_drop,
+            3,
+            "all three unmasked evaluations must be wiped by their guard"
+        );
+    }
+
+    #[test]
+    fn multi_round_prover_wipes_derived_state_on_success_and_unwind() {
+        let field = TrackedField;
+        let circuit = two_round_circuit(&field);
+
+        let success_inputs = Arc::new(AtomicUsize::new(0));
+        let success_derived = Arc::new(AtomicUsize::new(0));
+        let success_witness = vec![(0..4)
+            .map(|_| {
+                TrackedElement::secret_with_derived_wipes(0, &success_inputs, &success_derived)
+            })
+            .collect()];
+        let success = prove_core::<1, _>(
+            success_witness,
+            &zero_pad(&field, 2),
+            &circuit,
+            &mut Transcript::new(b"sumcheck-derived-success"),
+            &field,
+        );
+        assert_eq!(success.0.layers.len(), 1);
+        assert_eq!(success_inputs.load(Ordering::SeqCst), 4);
+        assert!(
+            success_derived.load(Ordering::SeqCst) > 0,
+            "multi-round success must wipe witness-derived scratch values"
+        );
+
+        let unwind_inputs = Arc::new(AtomicUsize::new(0));
+        let unwind_derived = Arc::new(AtomicUsize::new(0));
+        let unwind_witness = vec![(0..4)
+            .map(|_| TrackedElement::secret_with_derived_wipes(0, &unwind_inputs, &unwind_derived))
+            .collect()];
+        let unwind = catch_unwind(AssertUnwindSafe(|| {
+            let _ = prove_core::<1, _>(
+                unwind_witness,
+                &zero_pad(&field, 1),
+                &circuit,
+                &mut Transcript::new(b"sumcheck-derived-unwind"),
+                &field,
+            );
+        }));
+        assert!(unwind.is_err());
+        assert_eq!(unwind_inputs.load(Ordering::SeqCst), 4);
+        assert!(
+            unwind_derived.load(Ordering::SeqCst) > 0,
+            "multi-round unwind must wipe witness-derived scratch values"
+        );
     }
 }
