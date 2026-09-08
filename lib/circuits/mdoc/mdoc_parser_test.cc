@@ -87,6 +87,16 @@ Bytes map(std::initializer_list<std::pair<Bytes, Bytes>> entries) {
   return out;
 }
 
+Bytes map(const std::vector<std::pair<Bytes, Bytes>> &entries) {
+  Bytes out;
+  append_header(out, 5, entries.size());
+  for (const auto &[key, value] : entries) {
+    append(out, key);
+    append(out, value);
+  }
+  return out;
+}
+
 Bytes tag(size_t tag_number, const Bytes &value) {
   Bytes out = scalar(6, tag_number);
   append(out, value);
@@ -105,21 +115,35 @@ struct SyntheticOptions {
   bool trailing_attribute = false;
   bool trailing_mso = false;
   bool trailing_root = false;
+  bool wrong_attribute_tag = false;
+  bool wrong_mso_tag = false;
+  bool mismatched_mso_length = false;
+  bool duplicate_documents = false;
+  bool duplicate_element_value = false;
+  bool duplicate_mso_field = false;
 };
 
 Bytes synthetic_mdoc(const Bytes &element_value,
                      const SyntheticOptions &options = {}) {
   static const std::string kNamespace = "org.iso.18013.5.1";
 
-  Bytes attribute = map({{text("digestID"), scalar(0, 0)},
-                         {text("random"), byte_string(Bytes(16, 0x42))},
-                         {text("elementIdentifier"), text("synthetic_value")},
-                         {text("elementValue"), element_value}});
+  std::vector<std::pair<Bytes, Bytes>> attribute_entries = {
+      {text("digestID"), scalar(0, 0)},
+      {text("random"), byte_string(Bytes(16, 0x42))},
+      {text("elementIdentifier"), text("synthetic_value")},
+      {text("elementValue"), element_value},
+  };
+  if (options.duplicate_element_value) {
+    attribute_entries.push_back({text("elementValue"), scalar(0, 2)});
+  }
+  Bytes attribute = map(attribute_entries);
   if (options.trailing_attribute)
     attribute.push_back(0);
 
   const Bytes namespaces =
-      map({{text(kNamespace), array({tag(24, byte_string(attribute))})}});
+      map({{text(kNamespace),
+            array({tag(options.wrong_attribute_tag ? 23 : 24,
+                       byte_string(attribute))})}});
 
   const Bytes validity_info =
       map({{text("validFrom"), text("2024-01-01T00:00:00Z")},
@@ -131,14 +155,25 @@ Bytes synthetic_mdoc(const Bytes &element_value,
       map({{text(kNamespace),
             map({{scalar(0, 0), byte_string(Bytes(32, 0x33))}})}});
 
-  Bytes mso = map({{text("validityInfo"), validity_info},
-                   {text("deviceKeyInfo"), device_key_info},
-                   {text("valueDigests"), value_digests}});
+  std::vector<std::pair<Bytes, Bytes>> mso_entries = {
+      {text("validityInfo"), validity_info},
+      {text("deviceKeyInfo"), device_key_info},
+      {text("valueDigests"), value_digests},
+  };
+  if (options.duplicate_mso_field) {
+    mso_entries.push_back({text("validityInfo"), map({})});
+  }
+  Bytes mso = map(mso_entries);
   if (options.trailing_mso)
     mso.push_back(0);
 
+  Bytes tagged_mso = tagged_mso_bytes(mso);
+  if (options.wrong_mso_tag)
+    tagged_mso[1] = 0x17;
+  if (options.mismatched_mso_length)
+    ++tagged_mso[4];
   const Bytes issuer_auth =
-      array({scalar(0, 0), scalar(0, 0), byte_string(tagged_mso_bytes(mso)),
+      array({scalar(0, 0), scalar(0, 0), byte_string(tagged_mso),
              byte_string(Bytes(64, 0x44))});
   const Bytes issuer_signed = map(
       {{text("issuerAuth"), issuer_auth}, {text("nameSpaces"), namespaces}});
@@ -150,7 +185,12 @@ Bytes synthetic_mdoc(const Bytes &element_value,
   const Bytes document = map({{text("docType"), text("org.iso.18013.5.1.mDL")},
                               {text("issuerSigned"), issuer_signed},
                               {text("deviceSigned"), device_signed}});
-  Bytes root = map({{text("documents"), array({document})}});
+  std::vector<std::pair<Bytes, Bytes>> root_entries = {
+      {text("documents"), array({document})}};
+  if (options.duplicate_documents) {
+    root_entries.push_back({text("documents"), array({})});
+  }
+  Bytes root = map(root_entries);
   if (options.trailing_root)
     root.push_back(0);
   return root;
@@ -208,6 +248,62 @@ TEST(MdocParserTest, RejectsTrailingMsoData) {
   ParsedMdoc parsed;
   EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
             MDOC_PROVER_MSO_DECODING_FAILURE);
+}
+
+TEST(MdocParserTest, RejectsNonCanonicalTag24Wrappers) {
+  SyntheticOptions options;
+  options.wrong_attribute_tag = true;
+  Bytes mdoc = synthetic_mdoc(scalar(0, 1), options);
+  ParsedMdoc parsed;
+  EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+            MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE);
+
+  options = SyntheticOptions{};
+  options.wrong_mso_tag = true;
+  mdoc = synthetic_mdoc(scalar(0, 1), options);
+  EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+            MDOC_PROVER_MSO_DECODING_FAILURE);
+
+  options = SyntheticOptions{};
+  options.mismatched_mso_length = true;
+  mdoc = synthetic_mdoc(scalar(0, 1), options);
+  EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+            MDOC_PROVER_MSO_DECODING_FAILURE);
+}
+
+TEST(MdocParserTest, RejectsDuplicateFields) {
+  struct TestCase {
+    SyntheticOptions options;
+    MdocProverErrorCode expected;
+  };
+  SyntheticOptions duplicate_documents;
+  duplicate_documents.duplicate_documents = true;
+  SyntheticOptions duplicate_element_value;
+  duplicate_element_value.duplicate_element_value = true;
+  SyntheticOptions duplicate_mso_field;
+  duplicate_mso_field.duplicate_mso_field = true;
+  const TestCase tests[] = {
+      {duplicate_documents, MDOC_PROVER_DOCUMENTS_MISSING},
+      {duplicate_element_value, MDOC_PROVER_ATTRIBUTE_EV_MISSING},
+      {duplicate_mso_field, MDOC_PROVER_VALIDITY_INFO_MISSING},
+  };
+
+  for (const TestCase &test : tests) {
+    const Bytes mdoc = synthetic_mdoc(scalar(0, 1), test.options);
+    ParsedMdoc parsed;
+    EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+              test.expected);
+  }
+}
+
+TEST(MdocParserTest, RejectsNonMinimalIntegerElementValues) {
+  const Bytes values[] = {{0x18, 0x17}, {0x38, 0x17}};
+  for (const Bytes &value : values) {
+    const Bytes mdoc = synthetic_mdoc(value);
+    ParsedMdoc parsed;
+    EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+              MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE);
+  }
 }
 
 } // namespace

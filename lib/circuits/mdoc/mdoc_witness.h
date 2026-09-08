@@ -191,12 +191,22 @@ class ParsedMdoc {
         if (!tattr->is_variant(TAG)) {
           return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
         }
+        if (tattr->as_tag() != 24) {
+          return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
+        }
         const CborDoc& tagged_val = tattr->tagged_value();
         // Decode the map in this tagged attribute.
         if (!tagged_val.is_variant(BYTES)) {
           return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
         }
         CborDoc::CborString tattr_str = tagged_val.as_bytes();
+        const size_t tattr_pos = tattr->header_pos();
+        if (tattr_str.len > 0xff || tattr_pos > len ||
+            4 > len - tattr_pos || resp[tattr_pos] != 0xd8 ||
+            resp[tattr_pos + 1] != 0x18 || resp[tattr_pos + 2] != 0x58 ||
+            resp[tattr_pos + 3] != tattr_str.len) {
+          return MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE;
+        }
         size_t pos = tattr_str.pos;
         size_t end = pos + tattr_str.len;
         CborDoc er;
@@ -279,6 +289,17 @@ class ParsedMdoc {
     if (!tmso->is_variant(BYTES)) return MDOC_PROVER_MSO_MISSING;
     CborDoc::CborString tmso_str = tmso->as_bytes();
     if (tmso_str.len <= 5) return MDOC_PROVER_MSO_DECODING_FAILURE;
+    if (tmso_str.pos > len || tmso_str.len > len - tmso_str.pos ||
+        resp[tmso_str.pos] != 0xd8 || resp[tmso_str.pos + 1] != 0x18 ||
+        resp[tmso_str.pos + 2] != 0x59) {
+      return MDOC_PROVER_MSO_DECODING_FAILURE;
+    }
+    const size_t declared_mso_len =
+        static_cast<size_t>(resp[tmso_str.pos + 3]) * 256 +
+        resp[tmso_str.pos + 4];
+    if (declared_mso_len != tmso_str.len - 5) {
+      return MDOC_PROVER_MSO_DECODING_FAILURE;
+    }
     const uint8_t* pmso = resp + tmso_str.pos + 5;
     size_t pos = 0;
     CborDoc mso;
