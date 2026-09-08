@@ -34,6 +34,7 @@
 #include "proto/circuit_io.h"
 #include "proto/circuit_writer.h"
 #include "random/random.h"
+#include "random/secure_random_engine.h"
 #include "random/transcript.h"
 #include "sumcheck/circuit.h"
 #include "sumcheck/prover.h"
@@ -307,7 +308,7 @@ TEST(ZK, CommitRetryKeepsWitnessAllocationStable) {
   auto* allocation = prover.witness_.data();
   const size_t capacity = prover.witness_.capacity();
 
-  TestRandomEngine rng;
+  SecureRandomEngine rng;
   ZkProof<TestField> prior_proof(*circuit, 4, 6);
   Transcript prior_transcript((uint8_t*)"prior", 5);
   prover.commit(prior_proof, witness, prior_transcript, rng);
