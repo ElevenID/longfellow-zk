@@ -941,10 +941,8 @@ fn test_zk_zero_layers() {
             );
         } else {
             let first_nonzero = mask.trailing_zeros() as usize;
-            let expected_eval_error = format!(
-                "Circuit output at index {first_nonzero} is not zero: {:?}",
-                f.one()
-            );
+            let expected_eval_error =
+                format!("Circuit output at index {first_nonzero} is not zero");
             assert_eq!(
                 eval_res.unwrap_err(),
                 expected_eval_error,
