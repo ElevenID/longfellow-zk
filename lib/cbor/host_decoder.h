@@ -249,10 +249,9 @@ class CborDoc {
       return false;
     }
 
-    if ((type == 0 || type == 1 || type == 7) &&
-        ((count0 == 24 && count < 24) ||
-         (count0 == 25 && count <= 0xff) ||
-         (count0 == 26 && count <= 0xffff))) {
+    if ((count0 == 24 && count < 24) ||
+        (count0 == 25 && count <= 0xff) ||
+        (count0 == 26 && count <= 0xffff)) {
       return false;
     }
 

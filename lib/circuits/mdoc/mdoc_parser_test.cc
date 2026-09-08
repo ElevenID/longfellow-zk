@@ -62,6 +62,12 @@ Bytes text(const std::string &value) {
   return out;
 }
 
+Bytes nonminimal_text(const std::string &value) {
+  Bytes out = {0x78, static_cast<uint8_t>(value.size())};
+  out.insert(out.end(), value.begin(), value.end());
+  return out;
+}
+
 Bytes byte_string(const Bytes &value) {
   Bytes out;
   append_header(out, 2, value.size());
@@ -121,6 +127,7 @@ struct SyntheticOptions {
   bool duplicate_documents = false;
   bool duplicate_element_value = false;
   bool duplicate_mso_field = false;
+  bool nonminimal_element_value_key = false;
 };
 
 Bytes synthetic_mdoc(const Bytes &element_value,
@@ -131,7 +138,9 @@ Bytes synthetic_mdoc(const Bytes &element_value,
       {text("digestID"), scalar(0, 0)},
       {text("random"), byte_string(Bytes(16, 0x42))},
       {text("elementIdentifier"), text("synthetic_value")},
-      {text("elementValue"), element_value},
+      {options.nonminimal_element_value_key ? nonminimal_text("elementValue")
+                                            : text("elementValue"),
+       element_value},
   };
   if (options.duplicate_element_value) {
     attribute_entries.push_back({text("elementValue"), scalar(0, 2)});
@@ -304,6 +313,23 @@ TEST(MdocParserTest, RejectsNonMinimalIntegerElementValues) {
     EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
               MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE);
   }
+}
+
+TEST(MdocParserTest, RejectsNonMinimalEmbeddedLengthEncodings) {
+  const Bytes values[] = {{0x78, 0x01, 'a'}, {0x58, 0x01, 0x42}};
+  for (const Bytes &value : values) {
+    const Bytes mdoc = synthetic_mdoc(value);
+    ParsedMdoc parsed;
+    EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+              MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE);
+  }
+
+  SyntheticOptions options;
+  options.nonminimal_element_value_key = true;
+  const Bytes mdoc = synthetic_mdoc(scalar(0, 1), options);
+  ParsedMdoc parsed;
+  EXPECT_EQ(parsed.parse_device_response(mdoc.size(), mdoc.data()),
+            MDOC_PROVER_ATTRIBUTE_DECODE_FAILURE);
 }
 
 } // namespace

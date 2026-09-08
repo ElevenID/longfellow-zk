@@ -50,8 +50,11 @@ TEST(HostDecoderTest, DecodeHost) {
       // a short string
       {true, {X(2, 3), 'f', 'o', 'o'}},
 
-      // a long string:  header + next byte + string
-      {true, {X(2, 24), 3, 0xff, 25, 31}},
+      // a long string: header + next byte + 24 bytes
+      {true,
+       {X(2, 24), 24, 0,  1,  2,  3,  4,  5,  6,  7,  8,
+        9,        10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        20,       21, 22, 23}},
 
       // TAG for date
       {true,
@@ -69,8 +72,8 @@ TEST(HostDecoderTest, DecodeHost) {
       // map with 3 entries, {string, int}
       {true, {X(5, 3), 0x62, 'x', 'y', 0x8, 0x61, 'a', 0x9, 0x61, 'b', 0xa}},
 
-      // large map with 2 entries {int, array} with large array elements
-      {true, {X(5, 0x18), 2, 0, 0x58, 0x2, 'a', 'b', 1, 0x58, 2, 'b', 'c'}},
+      // map with 2 entries {int, byte string}
+      {true, {X(5, 2), 0, 0x42, 'a', 'b', 1, 0x42, 'b', 'c'}},
 
       // recursive map of maps, keys of different types
       {true, {0xA2, 0xA1, 0xA1, 1, 1, 0xF4, 0x61, 'a', 0x61, 'b', 3, 4}},
@@ -708,6 +711,22 @@ TEST(HostDecoderTest, RejectsNonMinimalPrimitiveEncodings) {
       {0xf8, 0x14},
       {0xf9, 0x00, 0x15},
       {0xfa, 0x00, 0x00, 0x00, 0x16},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalLengthAndTagEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x58, 0x00},
+      {0x78, 0x00},
+      {0x98, 0x00},
+      {0xb8, 0x00},
+      {0xd8, 0x00, 0x00},
   };
 
   for (const auto& bytes : invalid) {
