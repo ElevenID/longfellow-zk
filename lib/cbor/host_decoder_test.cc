@@ -574,7 +574,8 @@ TEST(HostDecoderTest, Coverage) {
     size_t pos = 0;
     ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
 #if GTEST_HAS_DEATH_TEST
-    EXPECT_DEATH(root.position(), "position\\(\\) called on unknown type");
+    EXPECT_DEATH(root.position(),
+                 "position\\(\\) called on unsupported value type");
 #endif
   }
 
@@ -594,8 +595,82 @@ TEST(HostDecoderTest, Coverage) {
     size_t pos = 0;
     ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
 #if GTEST_HAS_DEATH_TEST
-    EXPECT_DEATH(root.length(), "length\\(\\) called on non-value type");
+    EXPECT_DEATH(root.length(),
+                 "length\\(\\) called on unsupported value type");
 #endif
+  }
+}
+
+TEST(HostDecoderTest, TaggedNonStringHasNoValueSpan) {
+  CborDoc root;
+  const std::vector<uint8_t> bytes = {0xc2, 0x00};
+  size_t cursor = 0;
+  ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  ASSERT_EQ(cursor, bytes.size());
+
+  size_t position = 0;
+  size_t length = 0;
+  EXPECT_FALSE(root.value_span(position, length));
+  EXPECT_TRUE(root.encoded_span(position, length));
+  EXPECT_EQ(position, 0);
+  EXPECT_EQ(length, bytes.size());
+}
+
+TEST(HostDecoderTest, NegativeValueSpansCoverEncodingBoundaries) {
+  struct TestCase {
+    std::vector<uint8_t> bytes;
+    size_t encoded_length;
+  };
+  const TestCase tests[] = {
+      {{0x20}, 1},
+      {{0x37}, 1},
+      {{0x38, 0x18}, 2},
+      {{0x38, 0xff}, 2},
+      {{0x39, 0x01, 0x00}, 3},
+      {{0x3a, 0x00, 0x01, 0x00, 0x00}, 5},
+  };
+
+  for (const TestCase& test : tests) {
+    CborDoc root;
+    size_t cursor = 0;
+    ASSERT_TRUE(
+        root.decode(test.bytes.data(), test.bytes.size(), cursor, 0));
+    ASSERT_EQ(cursor, test.bytes.size());
+
+    size_t position = 99;
+    size_t length = 0;
+    EXPECT_TRUE(root.value_span(position, length));
+    EXPECT_EQ(position, 0);
+    EXPECT_EQ(length, test.encoded_length);
+    EXPECT_EQ(root.position(), 0);
+    EXPECT_EQ(root.length(), test.encoded_length);
+  }
+}
+
+TEST(HostDecoderTest, TextRequiresWellFormedUtf8) {
+  const std::vector<std::vector<uint8_t>> valid = {
+      {0x60},
+      {0x62, 0xc2, 0xa2},
+      {0x63, 0xe2, 0x82, 0xac},
+      {0x64, 0xf0, 0x9f, 0x92, 0xa9},
+  };
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x62, 0xc0, 0x80},
+      {0x63, 0xed, 0xa0, 0x80},
+      {0x64, 0xf4, 0x90, 0x80, 0x80},
+      {0x62, 0xe2, 0x82},
+  };
+
+  for (const auto& bytes : valid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_TRUE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+    EXPECT_EQ(cursor, bytes.size());
+  }
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
   }
 }
 

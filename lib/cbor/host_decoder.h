@@ -110,6 +110,87 @@ class CborDoc {
     return children_[0];
   }
 
+  // Returns the payload position and encoded value length for scalar mdoc
+  // values. Unsupported containers and tags return false instead of aborting.
+  bool value_span(size_t& position, size_t& length) const {
+    switch (t_) {
+      case UNSIGNED:
+      case NEGATIVE: {
+        uint64_t value = (t_ == UNSIGNED) ? u_.u64 : u_.n64;
+        position = header_pos_;
+        if (value < 24) {
+          length = 1;
+        } else if (value < 256) {
+          length = 2;
+        } else if (value < 65536) {
+          length = 3;
+        } else {
+          length = 5;
+        }
+        return true;
+      }
+      case BYTES:
+        position = as_bytes().pos;
+        length = as_bytes().len;
+        return true;
+      case TEXT:
+        position = as_text().pos;
+        length = as_text().len;
+        return true;
+      case TAG: {
+        const CborDoc& child = tagged_value();
+        if (!child.is_variant(BYTES) && !child.is_variant(TEXT)) {
+          return false;
+        }
+        return child.value_span(position, length);
+      }
+      case PRIMITIVE:
+        position = header_pos_;
+        length = 1;
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Returns the complete encoded span, including the CBOR header, for scalar
+  // values. This is useful when a caller must revalidate a nested value.
+  bool encoded_span(size_t& position, size_t& length) const {
+    position = header_pos_;
+    size_t end;
+    switch (t_) {
+      case UNSIGNED:
+      case NEGATIVE:
+      case PRIMITIVE: {
+        size_t value_position = 0;
+        size_t value_length = 0;
+        if (!value_span(value_position, value_length)) return false;
+        end = value_position + value_length;
+        break;
+      }
+      case BYTES:
+        end = as_bytes().pos + as_bytes().len;
+        break;
+      case TEXT:
+        end = as_text().pos + as_text().len;
+        break;
+      case TAG: {
+        size_t child_position = 0;
+        size_t child_length = 0;
+        if (!tagged_value().encoded_span(child_position, child_length)) {
+          return false;
+        }
+        end = child_position + child_length;
+        break;
+      }
+      default:
+        return false;
+    }
+    if (end < position) return false;
+    length = end - position;
+    return true;
+  }
+
   // Parse a byte sequence into a CborDoc structure.
   //
   // Caller passes in the input sequence, the length of the
@@ -171,6 +252,9 @@ class CborDoc {
       case 2: /* BYTES */
       case 3: /* TEXT */
         if (pos + count > len) {
+          return false;
+        }
+        if (type == 3 && !valid_utf8(&in[pos], count)) {
           return false;
         }
         t_ = (type == 2) ? BYTES : TEXT;
@@ -286,25 +370,11 @@ class CborDoc {
   // This function is only called once the input bytes are successfully
   // parsed; the check condition asserts this invariant.
   size_t position() const {
-    switch (t_) {
-      case UNSIGNED:
-      case NEGATIVE:
-        return header_pos_;
-      case BYTES:
-        return as_bytes().pos;
-      case TEXT:
-        return as_text().pos;
-      case TAG: {
-        auto child = tagged_value();
-        return child.is_variant(BYTES) ? child.as_bytes().pos
-                                       : child.as_text().pos;
-      }
-      case PRIMITIVE:
-        return header_pos_;
-      default:
-        check(false, "position() called on unknown type");
-    }
-    return 0;
+    size_t position = 0;
+    size_t length = 0;
+    check(value_span(position, length),
+          "position() called on unsupported value type");
+    return position;
   }
 
   // Returns the length of the item's value in bytes.
@@ -313,37 +383,49 @@ class CborDoc {
   // cases. This function is only called after the source bytes have been
   // successfully parsed.
   size_t length() const {
-    switch (t_) {
-      case UNSIGNED:
-      case NEGATIVE: {
-        uint64_t val = (t_ == UNSIGNED) ? u_.u64 : u_.n64;
-        if (val < 24) {
-          return 1;
-        } else if (val < 256) {
-          return 2;
-        } else if (val < 65536) {
-          return 3;
-        }
-        return 5;
-      }
-      case BYTES:
-        return as_bytes().len;
-      case TEXT:
-        return as_text().len;
-      case TAG: {
-        auto child = tagged_value();
-        return child.is_variant(BYTES) ? child.as_bytes().len
-                                       : child.as_text().len;
-      }
-      case PRIMITIVE:
-        return 1;
-      default:
-        check(false, "length() called on non-value type");
-    }
-    return 0;
+    size_t position = 0;
+    size_t length = 0;
+    check(value_span(position, length),
+          "length() called on unsupported value type");
+    return length;
   }
 
  private:
+  static bool valid_utf8(const uint8_t* input, size_t len) {
+    size_t i = 0;
+    while (i < len) {
+      const uint8_t first = input[i++];
+      if (first <= 0x7f) continue;
+
+      size_t continuation_count;
+      uint8_t second_min = 0x80;
+      uint8_t second_max = 0xbf;
+      if (first >= 0xc2 && first <= 0xdf) {
+        continuation_count = 1;
+      } else if (first >= 0xe0 && first <= 0xef) {
+        continuation_count = 2;
+        if (first == 0xe0) second_min = 0xa0;
+        if (first == 0xed) second_max = 0x9f;
+      } else if (first >= 0xf0 && first <= 0xf4) {
+        continuation_count = 3;
+        if (first == 0xf0) second_min = 0x90;
+        if (first == 0xf4) second_max = 0x8f;
+      } else {
+        return false;
+      }
+
+      if (continuation_count > len - i || input[i] < second_min ||
+          input[i] > second_max) {
+        return false;
+      }
+      ++i;
+      for (size_t j = 1; j < continuation_count; ++j, ++i) {
+        if (input[i] < 0x80 || input[i] > 0xbf) return false;
+      }
+    }
+    return true;
+  }
+
   // A union used to store the attributes for singleton objects (i.e.,
   // UNSIGNED, NEGATIVE, PRIMITIVE), the start position and len of
   // TEXT and BYTES array, or the children information for ARRAY or
