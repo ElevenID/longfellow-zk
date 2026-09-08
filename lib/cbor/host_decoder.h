@@ -28,6 +28,16 @@ namespace proofs {
 enum CborTag { UNSIGNED, NEGATIVE, BYTES, TEXT, ARRAY, MAP, TAG, PRIMITIVE };
 enum CborPrimitive { CFALSE, CTRUE, CNULL };
 
+namespace cbor_internal {
+
+inline bool count_fits(size_t pos, size_t len, size_t count,
+                       size_t items_per_entry) {
+  return items_per_entry != 0 && pos <= len &&
+         count <= (len - pos) / items_per_entry;
+}
+
+}  // namespace cbor_internal
+
 // CBOR decoder for a subset of CBOR used in MDOC.
 //
 // The main advantage of this decoder is that it keeps
@@ -239,6 +249,13 @@ class CborDoc {
       return false;
     }
 
+    if ((type == 0 || type == 1 || type == 7) &&
+        ((count0 == 24 && count < 24) ||
+         (count0 == 25 && count <= 0xff) ||
+         (count0 == 26 && count <= 0xffff))) {
+      return false;
+    }
+
     switch (type) { /* type \in [0,7] by construction */
       case 0:
         t_ = UNSIGNED;
@@ -251,7 +268,7 @@ class CborDoc {
 
       case 2: /* BYTES */
       case 3: /* TEXT */
-        if (pos + count > len) {
+        if (!cbor_internal::count_fits(pos, len, count, 1)) {
           return false;
         }
         if (type == 3 && !valid_utf8(&in[pos], count)) {
@@ -264,13 +281,13 @@ class CborDoc {
         break;
 
       case 4: /* ARRAY */
-        if (pos + count > len) {
+        if (!cbor_internal::count_fits(pos, len, count, 1)) {
           return false;
         }
         return decode_items(ARRAY, count, count, in, len, pos, offset);
 
       case 5: /* MAP, (key,val) pairs are stored as 2*children */
-        if (pos + 2 * count > len) {
+        if (!cbor_internal::count_fits(pos, len, count, 2)) {
           return false;
         }
         return decode_items(MAP, 2 * count, count, in, len, pos, offset);
@@ -278,7 +295,7 @@ class CborDoc {
       case 6: /* TAG */
         // Special cases for TAG
         if (count == 1004) {         // date in the form YYYY-MM-DD
-          if (pos + 1 + 10 > len) {  // 0xDA for str length + 10 characters
+          if (!cbor_internal::count_fits(pos, len, 11, 1)) {
             return false;
           }
         }

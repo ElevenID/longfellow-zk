@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -645,6 +646,62 @@ TEST(HostDecoderTest, NegativeValueSpansCoverEncodingBoundaries) {
     EXPECT_EQ(root.position(), 0);
     EXPECT_EQ(root.length(), test.encoded_length);
   }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalIntegerEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x18, 0x17},
+      {0x19, 0x00, 0xff},
+      {0x1a, 0x00, 0x00, 0xff, 0xff},
+      {0x38, 0x17},
+      {0x39, 0x00, 0xff},
+      {0x3a, 0x00, 0x00, 0xff, 0xff},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalPrimitiveEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0xf8, 0x14},
+      {0xf9, 0x00, 0x15},
+      {0xfa, 0x00, 0x00, 0x00, 0x16},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsLengthsThatOverflowOn32BitTargets) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x5a, 0xff, 0xff, 0xff, 0xff},
+      {0x7a, 0xff, 0xff, 0xff, 0xff},
+      {0x9a, 0xff, 0xff, 0xff, 0xff},
+      {0xba, 0xff, 0xff, 0xff, 0xff},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, LengthGuardIsOverflowSafeOnEveryArchitecture) {
+  const size_t maximum = std::numeric_limits<size_t>::max();
+  EXPECT_FALSE(cbor_internal::count_fits(5, 5, maximum, 1));
+  EXPECT_FALSE(cbor_internal::count_fits(5, 5, maximum, 2));
+  EXPECT_FALSE(cbor_internal::count_fits(6, 5, 0, 1));
+  EXPECT_FALSE(cbor_internal::count_fits(0, maximum, 1, 0));
+  EXPECT_TRUE(cbor_internal::count_fits(5, 5, 0, 1));
+  EXPECT_TRUE(cbor_internal::count_fits(5, 7, 1, 2));
 }
 
 TEST(HostDecoderTest, TextRequiresWellFormedUtf8) {
