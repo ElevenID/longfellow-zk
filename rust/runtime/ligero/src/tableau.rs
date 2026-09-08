@@ -16,16 +16,33 @@ pub struct Tableau<T> {
     data: Vec<T>,
     width: usize,
     height: usize,
+    wipe: Option<fn(&mut [T])>,
 }
 
 impl<T> Tableau<T> {
     pub fn new(height: usize, width: usize, default: T) -> Self
-    where T: Clone {
+    where
+        T: Clone + zeroize::Zeroize,
+    {
+        fn wipe<T: zeroize::Zeroize>(values: &mut [T]) {
+            for value in values {
+                zeroize::Zeroize::zeroize(value);
+            }
+        }
+
         Self {
             data: vec![default; height * width],
             width,
             height,
+            wipe: Some(wipe::<T>),
         }
+    }
+
+    pub fn new_zeroizing(height: usize, width: usize, default: T) -> Self
+    where
+        T: Clone + zeroize::Zeroize,
+    {
+        Self::new(height, width, default)
     }
 
     #[must_use]
@@ -37,6 +54,53 @@ impl<T> Tableau<T> {
     pub fn row_mut(&mut self, r: usize) -> &mut [T] {
         assert!(r < self.height);
         &mut self.data[r * self.width..(r + 1) * self.width]
+    }
+
+    #[cfg(feature = "prover")]
+    pub(crate) fn guard_vec(&self, data: Vec<T>) -> GuardedVec<T> {
+        GuardedVec {
+            data,
+            wipe: self.wipe,
+        }
+    }
+}
+
+#[cfg(feature = "prover")]
+pub(crate) struct GuardedVec<T> {
+    data: Vec<T>,
+    wipe: Option<fn(&mut [T])>,
+}
+
+#[cfg(feature = "prover")]
+impl<T> std::ops::Deref for GuardedVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+#[cfg(feature = "prover")]
+impl<T> std::ops::DerefMut for GuardedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+#[cfg(feature = "prover")]
+impl<T> Drop for GuardedVec<T> {
+    fn drop(&mut self) {
+        if let Some(wipe) = self.wipe {
+            wipe(&mut self.data);
+        }
+    }
+}
+
+impl<T> Drop for Tableau<T> {
+    fn drop(&mut self) {
+        if let Some(wipe) = self.wipe {
+            wipe(&mut self.data);
+        }
     }
 }
 
@@ -55,5 +119,43 @@ impl<T> std::ops::IndexMut<(usize, usize)> for Tableau<T> {
         let (r, c) = index;
         assert!(r < self.height && c < self.width);
         &mut self.data[r * self.width + c]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    use super::Tableau;
+    use zeroize::Zeroize;
+
+    #[derive(Clone)]
+    struct Tracked(Arc<AtomicUsize>);
+
+    impl Zeroize for Tracked {
+        fn zeroize(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn drop_zeroizes_every_tableau_element() {
+        let zeroized = Arc::new(AtomicUsize::new(0));
+        {
+            let _tableau = Tableau::new(3, 4, Tracked(Arc::clone(&zeroized)));
+        }
+        assert_eq!(zeroized.load(Ordering::SeqCst), 12);
+    }
+
+    #[test]
+    fn explicit_zeroizing_constructor_matches_ordinary_constructor() {
+        let zeroized = Arc::new(AtomicUsize::new(0));
+        {
+            let _tableau = Tableau::new_zeroizing(2, 3, Tracked(Arc::clone(&zeroized)));
+        }
+        assert_eq!(zeroized.load(Ordering::SeqCst), 6);
     }
 }

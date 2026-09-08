@@ -14,9 +14,11 @@
 
 #include "algebra/fp.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 #include "algebra/bogorng.h"
 #include "algebra/fp24.h"
@@ -429,6 +431,75 @@ TEST(Fp, castable) {
   EXPECT_FALSE(F.of_bytes_field(b));
   b[31] = 0xEF;
   EXPECT_TRUE(F.of_bytes_field(b));
+}
+
+TEST(Fp, SamplingScratchIsWipedOnSuccessRejectionAndException) {
+  Fp<1> field("17");
+  std::array<uint8_t, Fp<1>::kBytes> bytes;
+  Fp<1>::N candidate;
+
+  bytes.fill(0xa5);
+  candidate = Fp<1>::N(0xa5);
+  size_t calls = 0;
+  const auto sampled = field.sample_with_scratch(
+      [&calls](size_t n, uint8_t* out) {
+        ASSERT_EQ(n, 1u);
+        out[0] = calls++ == 0 ? 0xff : 0x03;
+      },
+      bytes, candidate);
+  EXPECT_EQ(field.from_montgomery(sampled), Fp<1>::N(3));
+  EXPECT_EQ(calls, 2u);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, Fp<1>::N(0));
+
+  bytes.fill(0xa5);
+  candidate = Fp<1>::N(0xa5);
+  EXPECT_THROW(
+      field.sample_with_scratch(
+          [](size_t, uint8_t* out) {
+            out[0] = 0x0f;
+            throw std::runtime_error("injected sampling failure");
+          },
+          bytes, candidate),
+      std::runtime_error);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, Fp<1>::N(0));
+}
+
+TEST(Fp24, SamplingScratchIsWipedOnSuccessRejectionAndException) {
+  Fp24 field(17);
+  std::array<uint8_t, Fp24::kBytes> bytes;
+  uint32_t candidate = 0xa5a5a5a5;
+
+  bytes.fill(0xa5);
+  size_t calls = 0;
+  const auto sampled = field.sample_with_scratch(
+      [&calls](size_t n, uint8_t* out) {
+        ASSERT_EQ(n, 1u);
+        out[0] = calls++ == 0 ? 0xff : 0x03;
+      },
+      bytes, candidate);
+  EXPECT_EQ(field.from_montgomery(sampled), Fp24::N(3));
+  EXPECT_EQ(calls, 2u);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, 0u);
+
+  bytes.fill(0xa5);
+  candidate = 0xa5a5a5a5;
+  EXPECT_THROW(
+      field.sample_with_scratch(
+          [](size_t, uint8_t* out) {
+            out[0] = 0x0f;
+            throw std::runtime_error("injected Fp24 sampling failure");
+          },
+          bytes, candidate),
+      std::runtime_error);
+  EXPECT_TRUE(std::all_of(bytes.begin(), bytes.end(),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(candidate, 0u);
 }
 
 // ======= Benchmarks ============

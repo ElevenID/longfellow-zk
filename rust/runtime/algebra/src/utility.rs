@@ -13,6 +13,30 @@
 // limitations under the License.
 
 use crate::field::RuntimeField;
+use std::ops::{Deref, DerefMut};
+use zeroize::Zeroize;
+
+pub(crate) struct ZeroizeOnDropRef<'a, T: Zeroize>(pub(crate) &'a mut T);
+
+impl<T: Zeroize> Deref for ZeroizeOnDropRef<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<T: Zeroize> DerefMut for ZeroizeOnDropRef<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<T: Zeroize> Drop for ZeroizeOnDropRef<'_, T> {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 pub(crate) struct AlgebraUtil;
 

@@ -14,5 +14,5 @@
 
 add_library(util OBJECT log.cc crypto.cc)
 target_link_libraries(util crypto zstd)
-proofs_add_tests(ceildiv_test)
+proofs_add_tests(ceildiv_test secure_wipe_test)
 

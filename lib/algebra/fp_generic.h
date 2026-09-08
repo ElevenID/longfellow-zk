@@ -26,6 +26,7 @@
 #include "algebra/static_string.h"
 #include "algebra/sysdep.h"
 #include "util/panic.h"
+#include "util/secure_wipe.h"
 
 namespace proofs {
 struct PrimeFieldTypeTag {};
@@ -359,13 +360,26 @@ class FpGeneric {
   // an exact multiple of the number of limbs.
   Elt sample(
       const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
-    size_t total_l = (exact_bits_ + 7) / 8;
-    uint8_t buf[kBytes] = {0};
+    std::array<uint8_t, kBytes> buf{};
+    N candidate{};
+    return sample_with_scratch(fill_bytes, buf, candidate);
+  }
+
+  // Scratch-aware sampling seam used to verify that every exit path clears
+  // the random bytes and decoded candidate. Normal callers should use sample.
+  Elt sample_with_scratch(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes,
+      std::array<uint8_t, kBytes>& buf, N& candidate) const {
+    SecureObjectWipeGuard<std::array<uint8_t, kBytes>> wipe_buf(buf);
+    SecureObjectWipeGuard<N> wipe_candidate(candidate);
+    const size_t total_l = (exact_bits_ + 7) / 8;
     for (;;) {
-      fill_bytes(total_l, buf);
-      N an = N::of_bytes(buf, exact_bits_);
-      if (an < m_) {
-        return to_montgomery(an);
+      secure_wipe_object(buf);
+      secure_wipe_object(candidate);
+      fill_bytes(total_l, buf.data());
+      candidate = N::of_bytes(buf.data(), exact_bits_);
+      if (candidate < m_) {
+        return to_montgomery(candidate);
       }
     }
   }

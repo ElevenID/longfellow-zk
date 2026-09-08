@@ -382,7 +382,7 @@ fn test_merkle_commitment_cpp_compatibility() {
             (idx * 7) as u8,
             (idx * 11) as u8,
         ];
-        sha.update(col_data);
+        sha.update(&col_data);
     });
 
     // Verify root matches exactly

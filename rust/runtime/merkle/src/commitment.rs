@@ -16,8 +16,10 @@
 use runtime_proto::MerkleNonce;
 use runtime_proto::MerkleProof;
 #[cfg(feature = "prover")]
-use runtime_random::RandomEngine;
+use runtime_random::{RandomEngine, SecureSha256};
 use sha2::{Digest as ShaDigest, Sha256};
+#[cfg(feature = "prover")]
+use zeroize::Zeroize;
 
 #[cfg(feature = "prover")]
 use super::heap::MerkleHeap;
@@ -35,6 +37,106 @@ pub struct MerkleCommitment {
     pub nonce: Vec<MerkleNonce>,
 }
 
+#[cfg(feature = "prover")]
+impl MerkleCommitment {
+    /// Erases all prover-only leaf salts. Call this after the final opening if
+    /// the commitment object must remain allocated.
+    pub fn clear_sensitive_nonces(&mut self) {
+        for nonce in &mut self.nonce {
+            nonce.bytes.zeroize();
+        }
+    }
+}
+
+#[cfg(feature = "prover")]
+impl Drop for MerkleCommitment {
+    fn drop(&mut self) {
+        self.clear_sensitive_nonces();
+    }
+}
+
+#[cfg(feature = "prover")]
+fn wipe_nonce_vec(nonces: &mut [MerkleNonce]) {
+    for nonce in nonces {
+        nonce.bytes.zeroize();
+    }
+}
+
+#[cfg(feature = "prover")]
+struct NonceWipeGuard<'a> {
+    nonces: &'a mut Vec<MerkleNonce>,
+    armed: bool,
+}
+
+#[cfg(feature = "prover")]
+impl NonceWipeGuard<'_> {
+    fn push(&mut self, nonce: MerkleNonce) {
+        self.nonces.push(nonce);
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+#[cfg(feature = "prover")]
+impl Drop for NonceWipeGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            wipe_nonce_vec(self.nonces);
+        }
+    }
+}
+
+#[cfg(feature = "prover")]
+struct RandomBytesWipeGuard<'a> {
+    bytes: &'a mut Vec<u8>,
+}
+
+#[cfg(feature = "prover")]
+impl Drop for RandomBytesWipeGuard<'_> {
+    fn drop(&mut self) {
+        self.bytes.zeroize();
+    }
+}
+
+#[cfg(feature = "prover")]
+struct NonceScratchWipeGuard<'a> {
+    bytes: &'a mut [u8; 32],
+}
+
+#[cfg(feature = "prover")]
+impl Drop for NonceScratchWipeGuard<'_> {
+    fn drop(&mut self) {
+        self.bytes.zeroize();
+    }
+}
+
+#[cfg(feature = "prover")]
+fn with_nonce_scratch<T, F, U>(
+    bytes: &mut Vec<u8>,
+    nonce_scratch: &mut [u8; 32],
+    after_copy: F,
+    use_nonce: U,
+) -> T
+where
+    F: FnOnce(),
+    U: FnOnce(&[u8; 32]) -> T,
+{
+    let guarded_source = RandomBytesWipeGuard { bytes };
+    let guarded_nonce = NonceScratchWipeGuard {
+        bytes: nonce_scratch,
+    };
+    assert_eq!(
+        guarded_source.bytes.len(),
+        32,
+        "random engine returned an unexpected nonce length"
+    );
+    guarded_nonce.bytes.copy_from_slice(guarded_source.bytes);
+    after_copy();
+    use_nonce(guarded_nonce.bytes)
+}
+
 /// Commits to a set of `num_leaves` leaves/columns.
 ///
 /// For each leaf:
@@ -48,33 +150,60 @@ pub struct MerkleCommitment {
 pub fn commit<F, R>(
     num_leaves: usize,
     rng: &mut R,
-    mut update_leaf_hash: F,
+    update_leaf_hash: F,
 ) -> (MerkleCommitment, Digest)
 where
-    F: FnMut(usize, &mut Sha256),
+    F: FnMut(usize, &mut SecureSha256),
     R: RandomEngine,
 {
+    commit_with_hash_factory(num_leaves, rng, update_leaf_hash, SecureSha256::new)
+}
+
+#[cfg(feature = "prover")]
+fn commit_with_hash_factory<F, R, H>(
+    num_leaves: usize,
+    rng: &mut R,
+    mut update_leaf_hash: F,
+    mut new_hash: H,
+) -> (MerkleCommitment, Digest)
+where
+    F: FnMut(usize, &mut SecureSha256),
+    R: RandomEngine,
+    H: FnMut() -> SecureSha256,
+{
     let mut nonce = Vec::with_capacity(num_leaves);
+    let mut nonce_guard = NonceWipeGuard {
+        nonces: &mut nonce,
+        armed: true,
+    };
     let mut leaves = Vec::with_capacity(num_leaves);
     for i in 0..num_leaves {
-        let nonce_bytes = rng.bytes(32);
-        let n = MerkleNonce {
-            bytes: nonce_bytes.try_into().unwrap(),
-        };
+        let mut random_nonce_bytes = rng.bytes(32);
+        let mut nonce_scratch = [0u8; 32];
+        with_nonce_scratch(
+            &mut random_nonce_bytes,
+            &mut nonce_scratch,
+            || {},
+            |nonce_value| {
+                let mut sha = new_hash();
+                sha.update(nonce_value);
+                update_leaf_hash(i, &mut sha);
 
-        let mut sha = Sha256::new();
-        sha.update(n.bytes);
-        update_leaf_hash(i, &mut sha);
-
-        let mut dig = Digest::default();
-        dig.data.copy_from_slice(&sha.finalize());
-
-        leaves.push(dig);
-        nonce.push(n);
+                let hash = sha.finish();
+                let mut digest = Digest::default();
+                digest.data.copy_from_slice(&*hash);
+                leaves.push(digest);
+                nonce_guard.push(MerkleNonce {
+                    bytes: *nonce_value,
+                });
+            },
+        );
     }
 
     let mh = MerkleHeap::new(&leaves);
     let root = mh.root();
+    nonce_guard.disarm();
+    drop(nonce_guard);
     (
         MerkleCommitment {
             num_leaves,
@@ -83,6 +212,113 @@ where
         },
         root,
     )
+}
+
+#[cfg(all(test, feature = "prover"))]
+mod zeroization_tests {
+    use super::{commit_with_hash_factory, with_nonce_scratch, MerkleCommitment, NonceWipeGuard};
+    use crate::heap::MerkleHeap;
+    use runtime_random::{HashCleanupObserver, RandomEngine, SecureSha256};
+
+    struct RecognizableRandom;
+
+    impl RandomEngine for RecognizableRandom {
+        fn bytes(&mut self, len: usize) -> Vec<u8> {
+            vec![0xa5; len]
+        }
+    }
+
+    #[test]
+    fn nonce_source_is_wiped_on_return_and_unwind() {
+        let mut normal = vec![0xa5; 32];
+        let mut normal_scratch = [0x5a; 32];
+        let nonce = with_nonce_scratch(&mut normal, &mut normal_scratch, || {}, |bytes| *bytes);
+        assert_eq!(nonce, [0xa5; 32]);
+        assert!(normal.iter().all(|byte| *byte == 0));
+        assert_eq!(normal_scratch, [0; 32]);
+
+        let mut unwinding = vec![0x5a; 32];
+        let mut unwind_scratch = [0xa5; 32];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_nonce_scratch(
+                &mut unwinding,
+                &mut unwind_scratch,
+                || panic!("injected unwind"),
+                |_| (),
+            );
+        }));
+        assert!(result.is_err());
+        assert!(unwinding.iter().all(|byte| *byte == 0));
+        assert_eq!(unwind_scratch, [0; 32]);
+    }
+
+    #[test]
+    fn commitment_explicitly_clears_opened_and_unopened_nonces() {
+        let leaves = [crate::Digest::default(); 2];
+        let mut commitment = MerkleCommitment {
+            num_leaves: 2,
+            mh: MerkleHeap::new(&leaves),
+            nonce: vec![
+                runtime_proto::MerkleNonce { bytes: [0xa5; 32] },
+                runtime_proto::MerkleNonce { bytes: [0x5a; 32] },
+            ],
+        };
+        let proof = super::open(&commitment, &[0]);
+        assert_eq!(proof.nonce[0].bytes, [0xa5; 32]);
+        commitment.clear_sensitive_nonces();
+        assert!(commitment
+            .nonce
+            .iter()
+            .all(|nonce| nonce.bytes.iter().all(|byte| *byte == 0)));
+    }
+
+    #[test]
+    fn partial_nonce_storage_is_wiped_on_unwind() {
+        let mut nonces = Vec::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut guard = NonceWipeGuard {
+                nonces: &mut nonces,
+                armed: true,
+            };
+            guard.push(runtime_proto::MerkleNonce { bytes: [0xa5; 32] });
+            panic!("injected commitment failure");
+        }));
+        assert!(result.is_err());
+        assert_eq!(nonces.len(), 1);
+        assert!(nonces[0].bytes.iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn merkle_hash_state_is_wiped_after_finalize_and_unwind() {
+        let finalize_observer = HashCleanupObserver::default();
+        let mut finishing_rng = RecognizableRandom;
+        let (commitment, _) =
+            commit_with_hash_factory(1, &mut finishing_rng, |_, hash| hash.update(&[0x5a; 31]), {
+                let observer = finalize_observer.clone();
+                move || SecureSha256::new_with_cleanup_observer(observer.clone())
+            });
+        assert_eq!(finalize_observer.cleanup_count(), 1);
+        drop(commitment);
+
+        let unwind_observer = HashCleanupObserver::default();
+        let mut unwinding_rng = RecognizableRandom;
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            commit_with_hash_factory(
+                1,
+                &mut unwinding_rng,
+                |_, hash| {
+                    hash.update(&[0x5a; 31]);
+                    panic!("injected Merkle hash unwind");
+                },
+                {
+                    let observer = unwind_observer.clone();
+                    move || SecureSha256::new_with_cleanup_observer(observer.clone())
+                },
+            );
+        }));
+        assert!(unwind.is_err());
+        assert_eq!(unwind_observer.cleanup_count(), 1);
+    }
 }
 
 /// Opens the commitment at the queried leaf positions `opened_indices`.

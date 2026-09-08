@@ -22,7 +22,7 @@ pub trait RuntimeSerializableField<const W: usize>:
 }
 
 pub trait RuntimeField<const W: usize>: core_algebra::AlgebraicField {
-    type Accum: Clone + std::fmt::Debug;
+    type Accum: Clone + std::fmt::Debug + zeroize::Zeroize;
 
     // Arithmetic operations
 

@@ -1,6 +1,6 @@
 [package]
 name = "runtime-ligero"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lints]
@@ -14,6 +14,7 @@ runtime-random = { path = "../random", default-features = false }
 runtime-merkle = { path = "../merkle", default-features = false }
 sha2 = "0.10.8"
 core-algebra = { path = "../../core/algebra" }
+zeroize = "1.8"
 
 [features]
 default = ["prover"]

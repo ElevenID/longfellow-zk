@@ -38,13 +38,15 @@ pub use attribute::RequestedAttribute;
 #[cfg(feature = "verifier")]
 pub use concrete::{push_input_hash, push_input_sig};
 #[cfg(feature = "prover")]
-pub use concrete::{push_witness_hash, push_witness_sig};
+pub(crate) use concrete::{push_witness_hash, push_witness_sig};
+#[cfg(feature = "prover")]
+pub use error::MdocProverErrorCode;
 #[cfg(feature = "verifier")]
 pub use error::MdocVerifierErrorCode;
 #[cfg(feature = "prover")]
-pub use error::MdocProverErrorCode;
+pub(crate) use mac::generate_mac_ap;
 #[cfg(feature = "prover")]
-pub use mac::{generate_mac_ap, push_macs};
+pub use mac::push_macs;
 #[cfg(feature = "verifier")]
 pub use mdoc_zk_circuits as circuits;
 #[cfg(feature = "circuit-provider")]
@@ -65,3 +67,19 @@ pub use utils::{circuit_supports, parse_hex_nat, parse_pk_coordinate, req_attr, 
 pub use verifier::*;
 #[cfg(feature = "verifier")]
 pub use zk_spec::*;
+
+/// Compile-time boundary: raw prover keys and witness vectors are internal.
+///
+/// ```compile_fail
+/// use mdoc_zk_runtime::generate_mac_ap;
+/// ```
+///
+/// ```compile_fail
+/// use mdoc_zk_runtime::push_witness_hash;
+/// ```
+///
+/// ```compile_fail
+/// use mdoc_zk_runtime::push_witness_sig;
+/// ```
+#[cfg(feature = "prover")]
+pub struct SecretProducerApiBoundary;

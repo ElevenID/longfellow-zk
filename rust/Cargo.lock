@@ -11,6 +11,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures 0.2.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -266,6 +267,7 @@ dependencies = [
  "compile-logic",
  "core-algebra",
  "runtime-algebra",
+ "zeroize",
 ]
 
 [[package]]
@@ -390,6 +392,7 @@ dependencies = [
  "compile-logic",
  "core-algebra",
  "runtime-algebra",
+ "zeroize",
 ]
 
 [[package]]
@@ -410,6 +413,7 @@ dependencies = [
  "hex",
  "runtime-algebra",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]
@@ -807,6 +811,7 @@ dependencies = [
  "num-bigint",
  "runtime-algebra",
  "sha2",
+ "zeroize",
  "zstd",
 ]
 
@@ -876,6 +881,7 @@ dependencies = [
  "runtime-random",
  "runtime-zk",
  "sha2",
+ "zeroize",
  "zstd",
 ]
 
@@ -1063,18 +1069,19 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "runtime-algebra"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "compile-algebra",
  "core-algebra",
  "criterion",
  "num-bigint",
  "num-traits",
+ "zeroize",
 ]
 
 [[package]]
 name = "runtime-ligero"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "core-algebra",
  "runtime-algebra",
@@ -1083,6 +1090,7 @@ dependencies = [
  "runtime-random",
  "sha2",
  "util",
+ "zeroize",
 ]
 
 [[package]]
@@ -1092,6 +1100,7 @@ dependencies = [
  "runtime-proto",
  "runtime-random",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]
@@ -1120,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-sumcheck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "compile-algebra",
  "compile-compiler",
@@ -1131,11 +1140,12 @@ dependencies = [
  "runtime-algebra",
  "runtime-proto",
  "runtime-random",
+ "zeroize",
 ]
 
 [[package]]
 name = "runtime-zk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "core-algebra",
  "core-proto",
@@ -1144,6 +1154,7 @@ dependencies = [
  "runtime-proto",
  "runtime-random",
  "runtime-sumcheck",
+ "zeroize",
 ]
 
 [[package]]
@@ -1419,6 +1430,20 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "zmij"

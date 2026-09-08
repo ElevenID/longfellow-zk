@@ -27,6 +27,7 @@
 #include "algebra/poly.h"
 #include "arrays/affine.h"
 #include "util/panic.h"
+#include "util/secure_wipe.h"
 
 namespace proofs {
 // ------------------------------------------------------------
@@ -48,6 +49,8 @@ class Dense {
 
   // make0 replacement
   explicit Dense(const Field& F) : n0_(1), n1_(1), v_(1) { v_[0] = F.zero(); }
+
+  ~Dense() { secure_wipe_vector(v_); }
 
   Dense(const Dense& y) = delete;
   Dense(const Dense&& y) = delete;

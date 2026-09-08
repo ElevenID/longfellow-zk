@@ -19,6 +19,7 @@ use runtime_algebra::{
 };
 use runtime_random::{RandomEngine, Transcript};
 use runtime_zk::ZkProver;
+use zeroize::Zeroizing;
 
 use crate::{attribute::RequestedAttribute, MdocProverErrorCode, ZkSpecStruct};
 
@@ -85,7 +86,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         crate::parse_pk_coordinate(pky, &p256).map_err(|_| MdocProverErrorCode::InvalidInput)?,
     );
 
-    let mac_ap = crate::generate_mac_ap(rng);
+    let mac_ap = Zeroizing::new(crate::generate_mac_ap(rng));
 
     let mut tp = Transcript::new(transcript);
     let p256_2 = runtime_algebra::fp2::Fp2Field::new(&p256);
@@ -117,15 +118,29 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         }
     }
 
-    let witness_hash = crate::push_witness_hash(version, &gf2, attrs, &parsed, &mac_ap)?;
-    let witness_sig = crate::push_witness_sig(
-        version, &p256, &q256, &secp256r1, &issuer_pk, &parsed, &mac_ap,
-    )?;
+    let witness_hash = Zeroizing::new(crate::push_witness_hash(
+        version,
+        &gf2,
+        attrs,
+        &parsed,
+        &mac_ap,
+        c_hash.raw.ninput - c_hash.raw.npublic_input,
+    )?);
+    let witness_sig = Zeroizing::new(crate::push_witness_sig(
+        version,
+        &p256,
+        &q256,
+        &secp256r1,
+        &issuer_pk,
+        &parsed,
+        &mac_ap,
+        c_sig.raw.ninput - c_sig.raw.npublic_input,
+    )?);
 
     let sf_sig = runtime_algebra::p256::P256Subfield::new(&p256);
 
     let prover_hash = ZkProver::<2, _>::new(c_hash, config_hash);
-    let (commit_hash, geom_hash) = prover_hash.commit(
+    let (commit_hash, geom_hash) = prover_hash.commit_zeroizing(
         &witness_hash,
         &runtime_zk::common::ZkContext {
             f: &gf2,
@@ -137,7 +152,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     );
 
     let prover_sig = ZkProver::<4, _>::new(c_sig, config_sig);
-    let (commit_sig, geom_sig) = prover_sig.commit(
+    let (commit_sig, geom_sig) = prover_sig.commit_zeroizing(
         &witness_sig,
         &runtime_zk::common::ZkContext {
             f: &p256,
@@ -178,9 +193,9 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     );
 
     let proof_hash = prover_hash
-        .prove(
-            hash_pub_inputs,
-            witness_hash,
+        .prove_zeroizing(
+            &hash_pub_inputs,
+            &witness_hash,
             &commit_hash,
             &mut tp,
             &runtime_zk::common::ZkContext {
@@ -188,15 +203,12 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
                 make_interpolator: &make_interpolator_hash,
             },
         )
-        .map_err(|e| {
-            eprintln!("prover_hash.prove failed: {e}");
-            MdocProverErrorCode::GeneralFailure
-        })?;
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
 
     let proof_sig = prover_sig
-        .prove(
-            sig_pub_inputs,
-            witness_sig,
+        .prove_zeroizing(
+            &sig_pub_inputs,
+            &witness_sig,
             &commit_sig,
             &mut tp,
             &runtime_zk::common::ZkContext {
@@ -204,10 +216,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
                 make_interpolator: &make_interpolator_sig,
             },
         )
-        .map_err(|e| {
-            eprintln!("prover_sig.prove failed: {e}");
-            MdocProverErrorCode::GeneralFailure
-        })?;
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
 
     let geom = crate::proto::MdocProofGeometry {
         geom_hash,
@@ -220,9 +229,6 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     };
     let out = proof
         .write(&geom, &gf2, &sf_hash, &p256, &sf_sig)
-        .map_err(|e| {
-            eprintln!("proof.write failed: {e}");
-            MdocProverErrorCode::GeneralFailure
-        })?;
+        .map_err(|_| MdocProverErrorCode::GeneralFailure)?;
     Ok(out)
 }

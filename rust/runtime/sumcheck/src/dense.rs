@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use runtime_algebra::field::RuntimeField;
+use zeroize::{Zeroize, Zeroizing};
 
 #[inline(always)]
 pub fn affine_interpolation<const W: usize, F: RuntimeField<W>>(
@@ -44,6 +45,32 @@ pub fn affine_interpolation_nz_z<const W: usize, F: RuntimeField<W>>(
 ) -> F::E {
     let p = f.mulf(f0, r);
     f.subf(f0, &p)
+}
+
+fn affine_interpolation_zeroizing<const W: usize, F>(r: &F::E, f0: &F::E, f1: &F::E, f: &F) -> F::E
+where
+    F: RuntimeField<W>,
+    F::E: Zeroize,
+{
+    let mut difference = Zeroizing::new(f1.clone());
+    f.sub(&mut difference, f0);
+    let mut product = Zeroizing::new((*difference).clone());
+    f.mul(&mut product, r);
+    let mut result = Zeroizing::new(f0.clone());
+    f.add(&mut result, &product);
+    (*result).clone()
+}
+
+fn affine_interpolation_nz_z_zeroizing<const W: usize, F>(r: &F::E, f0: &F::E, f: &F) -> F::E
+where
+    F: RuntimeField<W>,
+    F::E: Zeroize,
+{
+    let mut product = Zeroizing::new(f0.clone());
+    f.mul(&mut product, r);
+    let mut result = Zeroizing::new(f0.clone());
+    f.sub(&mut result, &product);
+    (*result).clone()
 }
 
 /// For a given random number r, the binding operation computes
@@ -93,6 +120,74 @@ pub fn bind_out_of_place<const W: usize, F: RuntimeField<W>>(
         out.push(affine_interpolation_nz_z(r, &v[in_n - 1], f));
     }
     out
+}
+
+/// Prover-only binding variant that guards both the partially built output on
+/// unwind and the completed folded wire allocation.
+pub fn bind_out_of_place_zeroizing<const W: usize, F>(
+    v: &[F::E],
+    r: &F::E,
+    f: &F,
+) -> Zeroizing<Vec<F::E>>
+where
+    F: RuntimeField<W>,
+    F::E: Zeroize,
+{
+    assert!(
+        !v.is_empty(),
+        "vector length must be >= 1 in bind_out_of_place_zeroizing"
+    );
+    let in_n = v.len();
+    let half = in_n / 2;
+    let mut out = Zeroizing::new(Vec::with_capacity(in_n.div_ceil(2)));
+    for chunk in v[..2 * half].chunks_exact(2) {
+        out.push(affine_interpolation_zeroizing(r, &chunk[0], &chunk[1], f));
+    }
+    if !in_n.is_multiple_of(2) {
+        out.push(affine_interpolation_nz_z_zeroizing(r, &v[in_n - 1], f));
+    }
+    out
+}
+
+/// In-place prover binding that clears elements before removing them from the
+/// vector's live length. `Zeroizing<Vec<_>>` cannot reach truncated elements
+/// during its eventual drop, so the clearing must happen here.
+pub fn bind_zeroizing<const W: usize, F>(v: &mut Vec<F::E>, r: &F::E, f: &F)
+where
+    F: RuntimeField<W>,
+    F::E: Zeroize,
+{
+    assert!(
+        !v.is_empty(),
+        "vector length must be >= 1 in bind_zeroizing"
+    );
+    let in_n = v.len();
+    let half = in_n / 2;
+
+    let ptr = v.as_mut_ptr();
+    for i in 0..half {
+        unsafe {
+            let v0 = &*ptr.add(2 * i);
+            let v1 = &*ptr.add(2 * i + 1);
+            let res = affine_interpolation_zeroizing(r, v0, v1, f);
+            (*ptr.add(i)).zeroize();
+            *ptr.add(i) = res;
+        }
+    }
+
+    let new_len = if in_n.is_multiple_of(2) {
+        half
+    } else {
+        let vn = &v[in_n - 1];
+        let folded = affine_interpolation_nz_z_zeroizing(r, vn, f);
+        v[half].zeroize();
+        v[half] = folded;
+        half + 1
+    };
+    for value in &mut v[new_len..] {
+        value.zeroize();
+    }
+    v.truncate(new_len);
 }
 
 pub fn bind_all<const W: usize, F: RuntimeField<W>>(

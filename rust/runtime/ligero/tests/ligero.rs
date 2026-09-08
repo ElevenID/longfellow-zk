@@ -174,7 +174,9 @@ fn ligero_test<
     nreq: usize,
     nl: usize,
     block_enc: usize,
-) {
+) where
+    ElementOf<F>: zeroize::Zeroize,
+{
     let param = LigeroParam::new(
         nw,
         nq,
@@ -307,7 +309,9 @@ fn test_ligero_verifier_failures_generic<
     make_interpolator: &IF,
     f: &F,
     sf: &SF,
-) {
+) where
+    ElementOf<F>: zeroize::Zeroize,
+{
     let nw = 300;
     let nq = 30;
     let nreq = 18;

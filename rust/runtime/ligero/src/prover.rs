@@ -18,8 +18,8 @@ use runtime_algebra::{
 };
 use runtime_merkle::{commit, open, MerkleCommitment};
 use runtime_proto::LigeroProof;
-use runtime_random::{RandomEngine, Transcript};
-use sha2::digest::Update;
+use runtime_random::{RandomEngine, SecureSha256, Transcript};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     common::{inner_product_vector, layout_aext_into},
@@ -56,7 +56,41 @@ impl<
     /// If you don't know better, set `subfield_boundary` = 0 which
     /// trivially works for any input.
     #[allow(clippy::too_many_arguments)]
-    pub fn commit<
+    pub fn commit<IF: InterpolatorFactory<W, F>, R: RandomEngine, SF: Subfield<E = ElementOf<F>>>(
+        subfield_boundary: usize,
+        witness: &[ElementOf<F>],
+        param: LigeroParam,
+        ts: &mut Transcript,
+        quadratic_constraints: &[LigeroQuadraticConstraint],
+        make_interpolator: &IF,
+        rng: &mut R,
+        f: &F,
+        sf: &SF,
+    ) -> (Self, LigeroCommitment)
+    where
+        ElementOf<F>: Zeroize,
+    {
+        for val in &witness[..subfield_boundary] {
+            debug_assert!(sf.contains(val), "element not in subfield");
+        }
+
+        let tableau = layout_zeroizing(
+            subfield_boundary,
+            witness,
+            &param,
+            quadratic_constraints,
+            make_interpolator,
+            rng,
+            f,
+            sf,
+        );
+
+        Self::finish_commit(param, ts, rng, f, tableau)
+    }
+
+    /// Backward-compatible alias for the ordinary zeroizing commitment path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_zeroizing<
         IF: InterpolatorFactory<W, F>,
         R: RandomEngine,
         SF: Subfield<E = ElementOf<F>>,
@@ -70,26 +104,34 @@ impl<
         rng: &mut R,
         f: &F,
         sf: &SF,
-    ) -> (Self, LigeroCommitment) {
-        for val in &witness[..subfield_boundary] {
-            debug_assert!(sf.contains(val), "element not in subfield");
-        }
-
-        let tableau = layout(
+    ) -> (Self, LigeroCommitment)
+    where
+        ElementOf<F>: Zeroize,
+    {
+        Self::commit(
             subfield_boundary,
             witness,
-            &param,
+            param,
+            ts,
             quadratic_constraints,
             make_interpolator,
             rng,
             f,
             sf,
-        );
+        )
+    }
 
+    fn finish_commit<R: RandomEngine>(
+        param: LigeroParam,
+        ts: &mut Transcript,
+        rng: &mut R,
+        f: &F,
+        tableau: Tableau<ElementOf<F>>,
+    ) -> (Self, LigeroCommitment) {
         let len = f.serialized_size_bytes();
-        let mut update_leaf_hash = |j: usize, sha: &mut sha2::Sha256| {
+        let mut update_leaf_hash = |j: usize, sha: &mut SecureSha256| {
             let col_idx = j + param.dblock;
-            let mut buf = [0u8; 128];
+            let mut buf = Zeroizing::new([0u8; 128]);
             for r in 0..param.nrow {
                 let val = &tableau[(r, col_idx)];
                 f.to_bytes_into(val, &mut buf[..len]);
@@ -134,8 +176,10 @@ impl<
         f: &F,
     ) -> Vec<ElementOf<F>> {
         let interp_a = make_interpolator.make(self.param.block, self.param.dblock);
-        let mut y = self.tableau.row(self.param.idot)[..self.param.dblock].to_vec();
-        let mut a_ext = vec![f.zero(); self.param.dblock];
+        let mut y = self
+            .tableau
+            .guard_vec(self.tableau.row(self.param.idot)[..self.param.dblock].to_vec());
+        let mut a_ext = self.tableau.guard_vec(vec![f.zero(); self.param.dblock]);
 
         for i in 0..self.param.nwqrow {
             layout_aext_into(&self.param, i, a, &mut a_ext, f);
@@ -149,7 +193,7 @@ impl<
                 f,
             );
         }
-        y
+        y.to_vec()
     }
 
     fn quadratic_proof(
@@ -157,13 +201,15 @@ impl<
         u_quad: &[ElementOf<F>],
         f: &F,
     ) -> (Vec<ElementOf<F>>, Vec<ElementOf<F>>) {
-        let mut y = self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec();
+        let mut y = self
+            .tableau
+            .guard_vec(self.tableau.row(self.param.iquad)[..self.param.dblock].to_vec());
 
         let iqx = self.param.iq;
         let iqy = iqx + self.param.nqtriples;
         let iqz = self.param.iq + 2 * self.param.nqtriples;
 
-        let mut tmp = vec![f.zero(); self.param.dblock];
+        let mut tmp = self.tableau.guard_vec(vec![f.zero(); self.param.dblock]);
         for (i, _u) in u_quad.iter().enumerate().take(self.param.nqtriples) {
             // y[i] += u_quad[i] * (z[i] - x[i] * y[i])
 
@@ -423,7 +469,7 @@ fn layout_quadratic_rows<
 }
 
 #[allow(clippy::too_many_arguments)]
-fn layout<
+fn layout_zeroizing<
     const W: usize,
     F: SupportsSampling<W>,
     IF: InterpolatorFactory<W, F>,
@@ -438,8 +484,11 @@ fn layout<
     rng: &mut R,
     f: &F,
     sf: &SF,
-) -> Tableau<ElementOf<F>> {
-    let mut tableau = Tableau::new(param.nrow, param.block_enc, f.zero());
+) -> Tableau<ElementOf<F>>
+where
+    ElementOf<F>: Zeroize,
+{
+    let mut tableau = Tableau::new_zeroizing(param.nrow, param.block_enc, f.zero());
     layout_blinding_rows(param, &mut tableau, make_interpolator, rng, f);
     layout_witness_rows(
         subfield_boundary,

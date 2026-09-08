@@ -222,19 +222,92 @@ impl Subfield for BinarySubfield {
     }
 
     fn sample<R: FnMut(usize) -> Vec<u8>>(&self, mut rng: R) -> Self::E {
-        let size = self.serialized_size_bytes();
+        let mut bytes = Vec::new();
         let mut buf = [0u8; 8];
-        let bytes = rng(size);
+        let mut value = 0u64;
+        self.sample_with_scratch(&mut rng, &mut bytes, &mut buf, &mut value, || {})
+    }
+}
+
+impl BinarySubfield {
+    fn sample_with_scratch<R, H>(
+        &self,
+        rng: &mut R,
+        bytes: &mut Vec<u8>,
+        buf: &mut [u8; 8],
+        value: &mut u64,
+        after_decode: H,
+    ) -> Gf2_128
+    where
+        R: FnMut(usize) -> Vec<u8>,
+        H: FnOnce(),
+    {
+        use crate::utility::ZeroizeOnDropRef;
+        use zeroize::{Zeroize, Zeroizing};
+
+        let size = self.serialized_size_bytes();
+        let mut guarded_bytes = ZeroizeOnDropRef(bytes);
+        let mut guarded_buf = ZeroizeOnDropRef(buf);
+        let mut guarded_value = ZeroizeOnDropRef(value);
+        guarded_bytes.zeroize();
+        guarded_bytes.clear();
+        guarded_bytes.reserve_exact(size);
+        guarded_buf.zeroize();
+        guarded_value.zeroize();
+        let random = Zeroizing::new(rng(size));
         assert_eq!(
-            bytes.len(),
+            random.len(),
             size,
             "sampling callback returned an unexpected number of bytes"
         );
-        buf[..size].copy_from_slice(&bytes);
-        let mut val = u64::from_le_bytes(buf);
+        guarded_bytes.extend_from_slice(&random);
+        guarded_buf[..size].copy_from_slice(&guarded_bytes);
+        *guarded_value = u64::from_le_bytes(*guarded_buf);
         if self.len < 64 {
-            val &= (1u64 << self.len) - 1;
+            *guarded_value &= (1u64 << self.len) - 1;
         }
-        self.embed(val)
+        after_decode();
+        self.embed(*guarded_value)
+    }
+}
+
+#[cfg(test)]
+mod sampling_zeroization_tests {
+    use super::BinarySubfield;
+
+    #[test]
+    fn subfield_sampling_scratch_is_wiped_on_return_and_unwind() {
+        let field = BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
+        let mut bytes = vec![0xa5; 2];
+        let mut buf = [0xa5; 8];
+        let mut value = u64::MAX;
+        let sampled = field.sample_with_scratch(
+            &mut |_| vec![0x34, 0x12],
+            &mut bytes,
+            &mut buf,
+            &mut value,
+            || {},
+        );
+        assert_eq!(field.project(&sampled), Ok(0x1234));
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(buf, [0; 8]);
+        assert_eq!(value, 0);
+
+        bytes.fill(0xa5);
+        buf.fill(0xa5);
+        value = u64::MAX;
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            field.sample_with_scratch(
+                &mut |_| vec![0x34, 0x12],
+                &mut bytes,
+                &mut buf,
+                &mut value,
+                || panic!("injected subfield sampling unwind"),
+            );
+        }));
+        assert!(unwind.is_err());
+        assert!(bytes.iter().all(|byte| *byte == 0));
+        assert_eq!(buf, [0; 8]);
+        assert_eq!(value, 0);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "runtime-sumcheck"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lints]
@@ -12,6 +12,7 @@ runtime-proto = { path = "../proto" }
 runtime-random = { path = "../random", default-features = false }
 core-proto = { path = "../../core/proto", default-features = false }
 core-algebra = { path = "../../core/algebra" }
+zeroize = "1.8"
 
 [features]
 default = ["prover"]

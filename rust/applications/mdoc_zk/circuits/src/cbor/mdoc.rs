@@ -13,19 +13,18 @@
 // limitations under the License.
 
 use core_algebra::Nat;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     cbor::{
         append_bytes_len,
-        constants::{
-            K_COSE1_PREFIX_LEN, K_COSE_SIGN1_SIGNING_HEADER,
-        },
+        constants::{K_COSE1_PREFIX_LEN, K_COSE_SIGN1_SIGNING_HEADER},
         parse::{CborElement, CborIndexVal, CborParser, CborValue},
     },
     mso_attribute::concrete::FieldLocator,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ParsedAttr {
     pub name: Vec<u8>,
     pub cbor_value: Vec<u8>,
@@ -34,7 +33,7 @@ pub struct ParsedAttr {
     pub field_locator: FieldLocator,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct DeviceKeyInfo {
     pub key_type: i64,
     pub crv: i64,
@@ -42,7 +41,7 @@ pub struct DeviceKeyInfo {
     pub y: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ParsedMdoc<N> {
     pub issuer_sig_digest: N,
     pub issuer_sig_r: N,
@@ -59,6 +58,31 @@ pub struct ParsedMdoc<N> {
     pub value_digests_offset_in_mso: usize,
     pub attrs: Vec<ParsedAttr>,
     pub cbor_mso: Vec<u8>,
+}
+
+impl Zeroize for ParsedAttr {
+    fn zeroize(&mut self) {
+        self.name.zeroize();
+        self.cbor_value.zeroize();
+        self.cbor_issuer_signed_item.zeroize();
+        self.mso_digest_offset_in_preimage.zeroize();
+    }
+}
+
+impl Drop for ParsedAttr {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for ParsedAttr {}
+
+impl<N> Drop for ParsedMdoc<N> {
+    fn drop(&mut self) {
+        self.doc_type.zeroize();
+        self.attrs.zeroize();
+        self.cbor_mso.zeroize();
+    }
 }
 
 impl<N> ParsedMdoc<N> {
@@ -681,16 +705,42 @@ fn format_cose_sign1_message(cbor_mso: &[u8]) -> Vec<u8> {
 mod tests {
     use compile_algebra::CompileNat;
     use sha2::{Digest, Sha256};
+    use zeroize::Zeroize;
+
+    use crate::{
+        cbor::{
+            constants::{K_COSE_SIGN1_SIGNING_HEADER, K_DEVICE_AUTHENTICATION_HEADER},
+            parse::CborParser,
+        },
+        mso_attribute::concrete::FieldLocator,
+    };
 
     use super::{
         compute_transcript_hash, parse_mdoc, parse_signature, required_map_value,
-        validate_mso_layout, MdocParseError,
-    };
-    use crate::cbor::{
-        constants::{K_COSE_SIGN1_SIGNING_HEADER, K_DEVICE_AUTHENTICATION_HEADER},
-        parse::CborParser,
+        validate_mso_layout, MdocParseError, ParsedAttr,
     };
 
+    #[test]
+    fn parsed_attribute_zeroization_clears_credential_bytes() {
+        let mut attribute = ParsedAttr {
+            name: b"family_name".to_vec(),
+            cbor_value: b"example".to_vec(),
+            cbor_issuer_signed_item: b"signed item".to_vec(),
+            mso_digest_offset_in_preimage: 42,
+            field_locator: FieldLocator {
+                slot_position: [1, 2, 3, 4],
+                length: [5, 6, 7, 8],
+                permutation: 9,
+            },
+        };
+
+        attribute.zeroize();
+
+        assert!(attribute.name.is_empty());
+        assert!(attribute.cbor_value.is_empty());
+        assert!(attribute.cbor_issuer_signed_item.is_empty());
+        assert_eq!(attribute.mso_digest_offset_in_preimage, 0);
+    }
     fn wrapped_mso(map_len: usize) -> (Vec<u8>, Vec<u8>) {
         let map = vec![0; map_len];
         let mut wrapped = vec![0xd8, 0x18, 0x59];

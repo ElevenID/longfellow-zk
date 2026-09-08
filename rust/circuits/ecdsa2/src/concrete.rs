@@ -18,6 +18,7 @@ use circuits_ec::{
 };
 use compile_algebra::field::SupportsNatConversions;
 use core_algebra::{BareField, Curve, Nat, NatOf};
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug)]
 pub struct ConcreteSlicing<F: BareField> {
@@ -28,12 +29,37 @@ pub struct ConcreteSlicing<F: BareField> {
     pub round: [Pt3<F::E>; 256],
 }
 
+impl<F: BareField> Zeroize for ConcreteSlicing<F>
+where
+    F::E: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.g_pk.zeroize();
+        self.g_r.zeroize();
+        self.pk_r.zeroize();
+        self.g_pk_r.zeroize();
+        self.round.zeroize();
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConcreteGiven<F: BareField> {
     pub pkxy: Pt2<F::E>,
     pub e: F::E,
     pub rxy: Pt2<F::E>,
     pub ers: [F::E; 256],
+}
+
+impl<F: BareField> Zeroize for ConcreteGiven<F>
+where
+    F::E: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.pkxy.zeroize();
+        self.e.zeroize();
+        self.rxy.zeroize();
+        self.ers.zeroize();
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +69,19 @@ pub struct ConcreteDerived<F: BareField> {
     pub nmsinv: F::E,
     pub yinv: F::E,
     pub slicing: ConcreteSlicing<F>,
+}
+
+impl<F: BareField> Zeroize for ConcreteDerived<F>
+where
+    F::E: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.pkxinv.zeroize();
+        self.rxinv.zeroize();
+        self.nmsinv.zeroize();
+        self.yinv.zeroize();
+        self.slicing.zeroize();
+    }
 }
 
 pub fn given<

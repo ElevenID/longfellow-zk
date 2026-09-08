@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -49,8 +50,11 @@ TEST(HostDecoderTest, DecodeHost) {
       // a short string
       {true, {X(2, 3), 'f', 'o', 'o'}},
 
-      // a long string:  header + next byte + string
-      {true, {X(2, 24), 3, 0xff, 25, 31}},
+      // a long string: header + next byte + 24 bytes
+      {true,
+       {X(2, 24), 24, 0,  1,  2,  3,  4,  5,  6,  7,  8,
+        9,        10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        20,       21, 22, 23}},
 
       // TAG for date
       {true,
@@ -68,8 +72,8 @@ TEST(HostDecoderTest, DecodeHost) {
       // map with 3 entries, {string, int}
       {true, {X(5, 3), 0x62, 'x', 'y', 0x8, 0x61, 'a', 0x9, 0x61, 'b', 0xa}},
 
-      // large map with 2 entries {int, array} with large array elements
-      {true, {X(5, 0x18), 2, 0, 0x58, 0x2, 'a', 'b', 1, 0x58, 2, 'b', 'c'}},
+      // map with 2 entries {int, byte string}
+      {true, {X(5, 2), 0, 0x42, 'a', 'b', 1, 0x42, 'b', 'c'}},
 
       // recursive map of maps, keys of different types
       {true, {0xA2, 0xA1, 0xA1, 1, 1, 0xF4, 0x61, 'a', 0x61, 'b', 3, 4}},
@@ -537,6 +541,44 @@ TEST(HostDecoderTest, Lookup) {
   EXPECT_EQ(ptr.key, nullptr);
 }
 
+TEST(HostDecoderTest, DuplicateMapKeysAreAmbiguous) {
+  struct TestCase {
+    std::vector<uint8_t> bytes;
+    enum KeyType { TEXT_KEY, UNSIGNED_KEY, NEGATIVE_KEY } key_type;
+  };
+  const TestCase tests[] = {
+      {{0xa2, 0x61, 'a', 0x01, 0x61, 'a', 0x02}, TestCase::TEXT_KEY},
+      {{0xa2, 0x01, 0x01, 0x01, 0x02}, TestCase::UNSIGNED_KEY},
+      {{0xa2, 0x20, 0x01, 0x20, 0x02}, TestCase::NEGATIVE_KEY},
+  };
+
+  for (const TestCase& test : tests) {
+    CborDoc root;
+    size_t cursor = 0;
+    ASSERT_TRUE(
+        root.decode(test.bytes.data(), test.bytes.size(), cursor, 0));
+    ASSERT_EQ(cursor, test.bytes.size());
+
+    size_t index = 99;
+    CborDoc::LookupResult result{nullptr, nullptr};
+    switch (test.key_type) {
+      case TestCase::TEXT_KEY: {
+        const uint8_t key[] = {'a'};
+        result = root.lookup(test.bytes.data(), sizeof(key), key, index);
+        break;
+      }
+      case TestCase::UNSIGNED_KEY:
+        result = root.lookup_unsigned(1, index);
+        break;
+      case TestCase::NEGATIVE_KEY:
+        result = root.lookup_negative(0, index);
+        break;
+    }
+    EXPECT_EQ(result.key, nullptr);
+    EXPECT_EQ(result.val, nullptr);
+  }
+}
+
 TEST(HostDecoderTest, Coverage) {
   // 1. Test position() for UNSIGNED
   {
@@ -574,7 +616,8 @@ TEST(HostDecoderTest, Coverage) {
     size_t pos = 0;
     ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
 #if GTEST_HAS_DEATH_TEST
-    EXPECT_DEATH(root.position(), "position\\(\\) called on unknown type");
+    EXPECT_DEATH(root.position(),
+                 "position\\(\\) called on unsupported value type");
 #endif
   }
 
@@ -594,8 +637,154 @@ TEST(HostDecoderTest, Coverage) {
     size_t pos = 0;
     ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), pos, 0));
 #if GTEST_HAS_DEATH_TEST
-    EXPECT_DEATH(root.length(), "length\\(\\) called on non-value type");
+    EXPECT_DEATH(root.length(),
+                 "length\\(\\) called on unsupported value type");
 #endif
+  }
+}
+
+TEST(HostDecoderTest, TaggedNonStringHasNoValueSpan) {
+  CborDoc root;
+  const std::vector<uint8_t> bytes = {0xc2, 0x00};
+  size_t cursor = 0;
+  ASSERT_TRUE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  ASSERT_EQ(cursor, bytes.size());
+
+  size_t position = 0;
+  size_t length = 0;
+  EXPECT_FALSE(root.value_span(position, length));
+  EXPECT_TRUE(root.encoded_span(position, length));
+  EXPECT_EQ(position, 0);
+  EXPECT_EQ(length, bytes.size());
+}
+
+TEST(HostDecoderTest, NegativeValueSpansCoverEncodingBoundaries) {
+  struct TestCase {
+    std::vector<uint8_t> bytes;
+    size_t encoded_length;
+  };
+  const TestCase tests[] = {
+      {{0x20}, 1},
+      {{0x37}, 1},
+      {{0x38, 0x18}, 2},
+      {{0x38, 0xff}, 2},
+      {{0x39, 0x01, 0x00}, 3},
+      {{0x3a, 0x00, 0x01, 0x00, 0x00}, 5},
+  };
+
+  for (const TestCase& test : tests) {
+    CborDoc root;
+    size_t cursor = 0;
+    ASSERT_TRUE(
+        root.decode(test.bytes.data(), test.bytes.size(), cursor, 0));
+    ASSERT_EQ(cursor, test.bytes.size());
+
+    size_t position = 99;
+    size_t length = 0;
+    EXPECT_TRUE(root.value_span(position, length));
+    EXPECT_EQ(position, 0);
+    EXPECT_EQ(length, test.encoded_length);
+    EXPECT_EQ(root.position(), 0);
+    EXPECT_EQ(root.length(), test.encoded_length);
+  }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalIntegerEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x18, 0x17},
+      {0x19, 0x00, 0xff},
+      {0x1a, 0x00, 0x00, 0xff, 0xff},
+      {0x38, 0x17},
+      {0x39, 0x00, 0xff},
+      {0x3a, 0x00, 0x00, 0xff, 0xff},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalPrimitiveEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0xf8, 0x14},
+      {0xf9, 0x00, 0x15},
+      {0xfa, 0x00, 0x00, 0x00, 0x16},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsNonMinimalLengthAndTagEncodings) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x58, 0x00},
+      {0x78, 0x00},
+      {0x98, 0x00},
+      {0xb8, 0x00},
+      {0xd8, 0x00, 0x00},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, RejectsLengthsThatOverflowOn32BitTargets) {
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x5a, 0xff, 0xff, 0xff, 0xff},
+      {0x7a, 0xff, 0xff, 0xff, 0xff},
+      {0x9a, 0xff, 0xff, 0xff, 0xff},
+      {0xba, 0xff, 0xff, 0xff, 0xff},
+  };
+
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+  }
+}
+
+TEST(HostDecoderTest, LengthGuardIsOverflowSafeOnEveryArchitecture) {
+  const size_t maximum = std::numeric_limits<size_t>::max();
+  EXPECT_FALSE(cbor_internal::count_fits(5, 5, maximum, 1));
+  EXPECT_FALSE(cbor_internal::count_fits(5, 5, maximum, 2));
+  EXPECT_FALSE(cbor_internal::count_fits(6, 5, 0, 1));
+  EXPECT_FALSE(cbor_internal::count_fits(0, maximum, 1, 0));
+  EXPECT_TRUE(cbor_internal::count_fits(5, 5, 0, 1));
+  EXPECT_TRUE(cbor_internal::count_fits(5, 7, 1, 2));
+}
+
+TEST(HostDecoderTest, TextRequiresWellFormedUtf8) {
+  const std::vector<std::vector<uint8_t>> valid = {
+      {0x60},
+      {0x62, 0xc2, 0xa2},
+      {0x63, 0xe2, 0x82, 0xac},
+      {0x64, 0xf0, 0x9f, 0x92, 0xa9},
+  };
+  const std::vector<std::vector<uint8_t>> invalid = {
+      {0x62, 0xc0, 0x80},
+      {0x63, 0xed, 0xa0, 0x80},
+      {0x64, 0xf4, 0x90, 0x80, 0x80},
+      {0x62, 0xe2, 0x82},
+  };
+
+  for (const auto& bytes : valid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_TRUE(root.decode(bytes.data(), bytes.size(), cursor, 0));
+    EXPECT_EQ(cursor, bytes.size());
+  }
+  for (const auto& bytes : invalid) {
+    CborDoc root;
+    size_t cursor = 0;
+    EXPECT_FALSE(root.decode(bytes.data(), bytes.size(), cursor, 0));
   }
 }
 

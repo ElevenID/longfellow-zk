@@ -10,10 +10,14 @@ workspace = true
 runtime-proto = { path = "../proto" }
 runtime-random = { path = "../random", optional = true }
 sha2 = "0.10.8"
+zeroize = { version = "1.8", features = ["alloc"] }
 
 [features]
 default = ["prover"]
 prover = ["dep:runtime-random"]
+
+[dev-dependencies]
+runtime-random = { path = "../random", features = ["hash-test-observer"] }
 
 [[test]]
 name = "merkle"

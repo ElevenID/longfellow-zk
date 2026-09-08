@@ -16,8 +16,9 @@ use circuits_sha256::concrete::{
     derived as sha256_generate_derived, ConcreteDerived as Sha256ConcreteDerived,
     ConcreteGiven as Sha256ConcreteGiven,
 };
+use zeroize::Zeroize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroize)]
 pub struct ConcreteGiven {
     pub padded_preimage: Vec<u8>,
     pub nblocks: usize,
@@ -25,7 +26,7 @@ pub struct ConcreteGiven {
     pub expected_hash: [u32; 8],
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Zeroize)]
 pub struct ConcreteDerived {
     pub sha_derived: Vec<Sha256ConcreteDerived>,
 }

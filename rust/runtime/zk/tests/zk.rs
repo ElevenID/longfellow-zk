@@ -226,6 +226,43 @@ fn test_zk_prover_verifier_end_to_end() {
 }
 
 #[test]
+fn test_zeroizing_commit_preallocates_pad_witness_without_reallocation() {
+    let f = Gf2_128Field::new();
+    let subfield = BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
+    let term = Term {
+        k: f.one(),
+        g: 0,
+        h0: 0,
+        h1: 1,
+    };
+    let raw = make_raw_circuit(&f, 2, 0, 1, 0, &[2], &[1], vec![vec![term]]);
+    let circuit = Circuit { raw, id: [0u8; 32] };
+    let make_interpolator = Lch14InterpolatorFactory::new(&f, &subfield);
+    let mut rng = SimpleRng { state: 42 };
+    let mut transcript = Transcript::new(b"zeroizing-pad-capacity");
+    let prover = ZkProver::new(
+        circuit,
+        LigeroConfig {
+            rateinv: 4,
+            nreq: 16,
+            block_enc: 256,
+        },
+    );
+    let witness = [f.one(), f.zero()];
+
+    let (_commitment, _geometry) = prover.commit_zeroizing(
+        &witness,
+        &runtime_zk::common::ZkContext {
+            f: &f,
+            make_interpolator: &make_interpolator,
+        },
+        &mut transcript,
+        &mut rng,
+        &subfield,
+    );
+}
+
+#[test]
 fn test_zk_rfc_testvector1() {
     let f = Gf2_128Field::new();
     let subfield = BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
@@ -904,10 +941,8 @@ fn test_zk_zero_layers() {
             );
         } else {
             let first_nonzero = mask.trailing_zeros() as usize;
-            let expected_eval_error = format!(
-                "Circuit output at index {first_nonzero} is not zero: {:?}",
-                f.one()
-            );
+            let expected_eval_error =
+                format!("Circuit output at index {first_nonzero} is not zero");
             assert_eq!(
                 eval_res.unwrap_err(),
                 expected_eval_error,
@@ -915,7 +950,7 @@ fn test_zk_zero_layers() {
             );
             assert_eq!(
                 prove_res.unwrap_err(),
-                format!("eval_circuit failed: {expected_eval_error}"),
+                format!("eval_circuit failed: Circuit output at index {first_nonzero} is not zero"),
                 "prove failed at the wrong check for input mask {mask}"
             );
         }
