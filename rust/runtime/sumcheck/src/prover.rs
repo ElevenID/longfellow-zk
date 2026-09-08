@@ -41,8 +41,6 @@ pub fn prove<const W: usize, F: InterpolationField<W> + SupportsSampling<W>>(
 where
     ElementOf<F>: Zeroize,
 {
-    #[cfg(test)]
-    let _cleanup = CleanupObserver(&PROVER_INPUT_CLEANUPS);
     prove_guarded(in_layers.into_witness_layers(), pad, circuit, transcript, f)
 }
 
@@ -86,8 +84,6 @@ pub fn prove_core<const W: usize, F: InterpolationField<W> + SupportsSampling<W>
 where
     ElementOf<F>: Zeroize,
 {
-    #[cfg(test)]
-    let _cleanup = CleanupObserver(&PROVER_INPUT_CLEANUPS);
     prove_core_guarded(in_layers.into_witness_layers(), pad, circuit, transcript, f)
 }
 
@@ -165,20 +161,6 @@ where
 
     (SumcheckProof { layers }, SumcheckProofAux { bound_quad })
 }
-
-#[cfg(test)]
-struct CleanupObserver(&'static std::sync::atomic::AtomicUsize);
-
-#[cfg(test)]
-impl Drop for CleanupObserver {
-    fn drop(&mut self) {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
-#[cfg(test)]
-static PROVER_INPUT_CLEANUPS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
 
 #[allow(clippy::too_many_arguments)]
 fn layer_guarded<const W: usize, F>(
@@ -393,19 +375,22 @@ fn quad_round_poly<const W: usize, F: InterpolationField<W>>(
 mod secure_default_tests {
     use std::{
         panic::{catch_unwind, AssertUnwindSafe},
-        sync::{atomic::Ordering, Mutex},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
 
     use core_proto::circuit::{Circuit, Layer, RawCircuit};
-    use runtime_algebra::gf2_128::Gf2_128Field;
     use runtime_random::Transcript;
 
-    use super::{prove, prove_core, PROVER_INPUT_CLEANUPS};
-    use crate::SumcheckProof;
+    use super::{prove, prove_core};
+    use crate::{
+        test_field::{TrackedElement, TrackedField},
+        SumcheckProof,
+    };
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    fn circuit(layers: Vec<Layer<Gf2_128Field>>) -> Circuit<Gf2_128Field> {
+    fn circuit(layers: Vec<Layer<TrackedField>>) -> Circuit<TrackedField> {
         Circuit {
             raw: RawCircuit {
                 ninput: 0,
@@ -422,25 +407,25 @@ mod secure_default_tests {
 
     #[test]
     fn ordinary_prover_wipes_layers_on_success_and_unwind() {
-        let _lock = TEST_LOCK.lock().expect("test lock poisoned");
-        PROVER_INPUT_CLEANUPS.store(0, Ordering::SeqCst);
-        let field = Gf2_128Field::new();
+        let field = TrackedField;
         let empty_circuit = circuit(Vec::new());
-        let empty_pad = SumcheckProof { layers: Vec::new() };
+        let empty_pad: SumcheckProof<1, TrackedField> = SumcheckProof { layers: Vec::new() };
 
-        let success = prove_core(
-            Vec::new(),
+        let success_wipes = Arc::new(AtomicUsize::new(0));
+        let success = prove_core::<1, _>(
+            vec![vec![TrackedElement::secret(1, &success_wipes)]],
             &empty_pad,
             &empty_circuit,
             &mut Transcript::new(b"sumcheck-cleanup-success"),
             &field,
         );
         assert!(success.0.layers.is_empty());
-        assert_eq!(PROVER_INPUT_CLEANUPS.load(Ordering::SeqCst), 1);
+        assert_eq!(success_wipes.load(Ordering::SeqCst), 1);
 
+        let prove_unwind_wipes = Arc::new(AtomicUsize::new(0));
         let prove_unwind = catch_unwind(AssertUnwindSafe(|| {
-            let _ = prove(
-                Vec::new(),
+            let _ = prove::<1, _>(
+                vec![vec![TrackedElement::secret(1, &prove_unwind_wipes)]],
                 &empty_pad,
                 &empty_circuit,
                 &mut Transcript::new(b"sumcheck-cleanup-prove-unwind"),
@@ -448,12 +433,13 @@ mod secure_default_tests {
             );
         }));
         assert!(prove_unwind.is_err());
-        assert_eq!(PROVER_INPUT_CLEANUPS.load(Ordering::SeqCst), 2);
+        assert_eq!(prove_unwind_wipes.load(Ordering::SeqCst), 1);
 
         let invalid_circuit = circuit(vec![Layer::new(1, 0, Vec::new(), Vec::new(), Vec::new())]);
+        let core_unwind_wipes = Arc::new(AtomicUsize::new(0));
         let core_unwind = catch_unwind(AssertUnwindSafe(|| {
-            let _ = prove_core(
-                Vec::new(),
+            let _ = prove_core::<1, _>(
+                vec![vec![TrackedElement::secret(1, &core_unwind_wipes)]],
                 &empty_pad,
                 &invalid_circuit,
                 &mut Transcript::new(b"sumcheck-cleanup-core-unwind"),
@@ -461,6 +447,6 @@ mod secure_default_tests {
             );
         }));
         assert!(core_unwind.is_err());
-        assert_eq!(PROVER_INPUT_CLEANUPS.load(Ordering::SeqCst), 3);
+        assert_eq!(core_unwind_wipes.load(Ordering::SeqCst), 1);
     }
 }

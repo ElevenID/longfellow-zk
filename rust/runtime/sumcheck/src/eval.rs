@@ -26,8 +26,6 @@ pub fn eval_circuit<const W: usize, F: RuntimeField<W> + SerializableField>(
 where
     F::E: Zeroize,
 {
-    #[cfg(test)]
-    let _cleanup = CleanupObserver(&EVAL_INPUT_CLEANUPS);
     eval_circuit_guarded(Zeroizing::new(w), circuit, f)
 }
 
@@ -81,19 +79,6 @@ where
     eval_quad_guarded(nv, w, layer, constants, f)
 }
 
-#[cfg(test)]
-struct CleanupObserver(&'static std::sync::atomic::AtomicUsize);
-
-#[cfg(test)]
-impl Drop for CleanupObserver {
-    fn drop(&mut self) {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
-#[cfg(test)]
-static EVAL_INPUT_CLEANUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
 pub fn eval_quad_guarded<const W: usize, F>(
     nv: usize,
     w: &[F::E],
@@ -142,21 +127,23 @@ where
 mod secure_default_tests {
     use std::{
         panic::{catch_unwind, AssertUnwindSafe},
-        sync::{atomic::Ordering, Mutex},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
 
     use core_proto::circuit::{Circuit, Layer, RawCircuit, TermDelta};
-    use runtime_algebra::{gf2_128::Gf2_128Field, AlgebraicField};
+    use runtime_algebra::AlgebraicField;
 
-    use super::{eval_circuit, eval_quad, EVAL_INPUT_CLEANUPS};
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    use super::{eval_circuit, eval_quad};
+    use crate::test_field::{TrackedElement, TrackedField};
 
     fn circuit(
-        layers: Vec<Layer<Gf2_128Field>>,
+        layers: Vec<Layer<TrackedField>>,
         ninput: usize,
         noutput: usize,
-    ) -> Circuit<Gf2_128Field> {
+    ) -> Circuit<TrackedField> {
         Circuit {
             raw: RawCircuit {
                 ninput,
@@ -173,42 +160,58 @@ mod secure_default_tests {
 
     #[test]
     fn ordinary_evaluation_wipes_input_on_success_error_and_unwind() {
-        let _lock = TEST_LOCK.lock().expect("test lock poisoned");
-        EVAL_INPUT_CLEANUPS.store(0, Ordering::SeqCst);
-        let field = Gf2_128Field::new();
+        let field = TrackedField;
 
-        let success = eval_circuit(Vec::new(), &circuit(Vec::new(), 0, 0), &field);
-        assert!(success.is_ok());
-        assert_eq!(EVAL_INPUT_CLEANUPS.load(Ordering::SeqCst), 1);
+        let success_wipes = Arc::new(AtomicUsize::new(0));
+        let success_layer = Layer::new(1, 0, Vec::new(), Vec::new(), Vec::new());
+        let success = eval_circuit::<1, _>(
+            vec![TrackedElement::secret(1, &success_wipes)],
+            &circuit(vec![success_layer], 1, 1),
+            &field,
+        )
+        .expect("empty layer produces a zero output");
+        assert_eq!(success_wipes.load(Ordering::SeqCst), 0);
+        drop(success);
+        assert_eq!(success_wipes.load(Ordering::SeqCst), 1);
 
-        let error = eval_circuit(vec![field.one()], &circuit(Vec::new(), 1, 1), &field)
-            .expect_err("nonzero circuit output must fail");
+        let error_wipes = Arc::new(AtomicUsize::new(0));
+        let error = eval_circuit::<1, _>(
+            vec![TrackedElement::secret(1, &error_wipes)],
+            &circuit(Vec::new(), 1, 1),
+            &field,
+        )
+        .expect_err("nonzero circuit output must fail");
         assert_eq!(error, "Circuit output at index 0 is not zero");
-        assert_eq!(EVAL_INPUT_CLEANUPS.load(Ordering::SeqCst), 2);
+        assert_eq!(error_wipes.load(Ordering::SeqCst), 1);
 
         let invalid_layer = Layer::new(
             1,
             0,
             vec![TermDelta {
                 g: 0,
-                h: [0, 0],
+                h: [1, 0],
                 k_index: 0,
             }],
             vec![vec![0]],
             vec![0],
         );
-        let mut invalid = circuit(vec![invalid_layer], 0, 1);
+        let mut invalid = circuit(vec![invalid_layer], 1, 1);
         invalid.raw.constants.push(field.zero());
+        let unwind_wipes = Arc::new(AtomicUsize::new(0));
         let unwind = catch_unwind(AssertUnwindSafe(|| {
-            let _ = eval_circuit(Vec::new(), &invalid, &field);
+            let _ = eval_circuit::<1, _>(
+                vec![TrackedElement::secret(1, &unwind_wipes)],
+                &invalid,
+                &field,
+            );
         }));
         assert!(unwind.is_err());
-        assert_eq!(EVAL_INPUT_CLEANUPS.load(Ordering::SeqCst), 3);
+        assert_eq!(unwind_wipes.load(Ordering::SeqCst), 1);
     }
 
     #[test]
     fn ordinary_quad_error_redacts_witness_values() {
-        let field = Gf2_128Field::new();
+        let field = TrackedField;
         let layer = Layer::new(
             1,
             0,
@@ -220,7 +223,7 @@ mod secure_default_tests {
             vec![vec![0]],
             vec![0],
         );
-        let error = eval_quad(1, &[field.one()], &layer, &[field.zero()], &field)
+        let error = eval_quad::<1, _>(1, &[field.one()], &layer, &[field.zero()], &field)
             .expect_err("nonzero multiplication constraint must fail");
         assert_eq!(
             error,
