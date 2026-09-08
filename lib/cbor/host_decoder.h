@@ -339,31 +339,35 @@ class CborDoc {
   // the value and is guaranteed to exist.
   LookupResult lookup(const uint8_t* const in, size_t len,
                       const uint8_t bytes[/*len*/], size_t& ndx) const {
+    LookupResult result{nullptr, nullptr};
     if (t_ == MAP) {
       for (size_t i = 0; i < u_.items.n; ++i) {
         const CborDoc* key = &children_[2 * i];
         if (key->eq(in, len, bytes)) {
+          if (result.key != nullptr) return LookupResult{nullptr, nullptr};
           ndx = i;
-          return LookupResult{key, &children_[2 * i + 1]};
+          result = LookupResult{key, &children_[2 * i + 1]};
         }
       }
     }
-    return LookupResult{nullptr, nullptr};
+    return result;
   }
 
   // Lookup a key in a map of type {unsigned->object}.
   // Returns null if the query is invalid.
   LookupResult lookup_unsigned(uint64_t u64, size_t& ndx) const {
+    LookupResult result{nullptr, nullptr};
     if (t_ == MAP) {
       for (size_t i = 0; i < u_.items.n; ++i) {
         const CborDoc* key = &children_[2 * i];
         if (key->t_ == UNSIGNED && key->u_.u64 == u64) {
+          if (result.key != nullptr) return LookupResult{nullptr, nullptr};
           ndx = i;
-          return LookupResult{key, &children_[2 * i + 1]};
+          result = LookupResult{key, &children_[2 * i + 1]};
         }
       }
     }
-    return LookupResult{nullptr, nullptr};
+    return result;
   }
 
   // Lookup a key in a map of type {negative->object}.
@@ -371,16 +375,18 @@ class CborDoc {
   // N64 is the unsigned quantity stored in the CBOR document.
   // When interpreted as an integer, it encodes -1 - N64.
   LookupResult lookup_negative(uint64_t n64, size_t& ndx) const {
+    LookupResult result{nullptr, nullptr};
     if (t_ == MAP) {
       for (size_t i = 0; i < u_.items.n; ++i) {
         const CborDoc* key = &children_[2 * i];
         if (key->t_ == NEGATIVE && key->u_.n64 == n64) {
+          if (result.key != nullptr) return LookupResult{nullptr, nullptr};
           ndx = i;
-          return LookupResult{key, &children_[2 * i + 1]};
+          result = LookupResult{key, &children_[2 * i + 1]};
         }
       }
     }
-    return LookupResult{nullptr, nullptr};
+    return result;
   }
 
   // Returns the index of the item with respect to the document bytes.

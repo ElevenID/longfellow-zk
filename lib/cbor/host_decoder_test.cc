@@ -538,6 +538,44 @@ TEST(HostDecoderTest, Lookup) {
   EXPECT_EQ(ptr.key, nullptr);
 }
 
+TEST(HostDecoderTest, DuplicateMapKeysAreAmbiguous) {
+  struct TestCase {
+    std::vector<uint8_t> bytes;
+    enum KeyType { TEXT_KEY, UNSIGNED_KEY, NEGATIVE_KEY } key_type;
+  };
+  const TestCase tests[] = {
+      {{0xa2, 0x61, 'a', 0x01, 0x61, 'a', 0x02}, TestCase::TEXT_KEY},
+      {{0xa2, 0x01, 0x01, 0x01, 0x02}, TestCase::UNSIGNED_KEY},
+      {{0xa2, 0x20, 0x01, 0x20, 0x02}, TestCase::NEGATIVE_KEY},
+  };
+
+  for (const TestCase& test : tests) {
+    CborDoc root;
+    size_t cursor = 0;
+    ASSERT_TRUE(
+        root.decode(test.bytes.data(), test.bytes.size(), cursor, 0));
+    ASSERT_EQ(cursor, test.bytes.size());
+
+    size_t index = 99;
+    CborDoc::LookupResult result{nullptr, nullptr};
+    switch (test.key_type) {
+      case TestCase::TEXT_KEY: {
+        const uint8_t key[] = {'a'};
+        result = root.lookup(test.bytes.data(), sizeof(key), key, index);
+        break;
+      }
+      case TestCase::UNSIGNED_KEY:
+        result = root.lookup_unsigned(1, index);
+        break;
+      case TestCase::NEGATIVE_KEY:
+        result = root.lookup_negative(0, index);
+        break;
+    }
+    EXPECT_EQ(result.key, nullptr);
+    EXPECT_EQ(result.val, nullptr);
+  }
+}
+
 TEST(HostDecoderTest, Coverage) {
   // 1. Test position() for UNSIGNED
   {
