@@ -85,6 +85,12 @@ impl<const L: usize, Tag> Zeroize for FpGenericElement<L, Tag> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FpGenericAccum<const A: usize>(pub [Limb; A]);
 
+impl<const A: usize> Zeroize for FpGenericAccum<A> {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 impl<const A: usize> Default for FpGenericAccum<A> {
     fn default() -> Self {
         Self([0 as Limb; A])

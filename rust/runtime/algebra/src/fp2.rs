@@ -13,10 +13,22 @@
 // limitations under the License.
 
 use crate::field::{AlgebraicField, RuntimeField, SupportsQuadraticExtension};
+use zeroize::Zeroize;
 
 pub struct Fp2Element<const W: usize, F: SupportsQuadraticExtension<W>> {
     pub re: F::E,
     pub im: F::E,
+}
+
+impl<const W: usize, F> Zeroize for Fp2Element<W, F>
+where
+    F: SupportsQuadraticExtension<W>,
+    F::E: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.re.zeroize();
+        self.im.zeroize();
+    }
 }
 
 impl<const W: usize, F: SupportsQuadraticExtension<W>> Clone for Fp2Element<W, F> {
@@ -159,6 +171,16 @@ impl<const W: usize, F: SupportsQuadraticExtension<W>> core_algebra::AlgebraicFi
 #[derive(PartialEq, Eq)]
 pub struct Fp2Accum<const W: usize, F: SupportsQuadraticExtension<W>>(pub Fp2Element<W, F>);
 
+impl<const W: usize, F> Zeroize for Fp2Accum<W, F>
+where
+    F: SupportsQuadraticExtension<W>,
+    F::E: Zeroize,
+{
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 impl<const W: usize, F: SupportsQuadraticExtension<W>> Clone for Fp2Accum<W, F> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -171,7 +193,11 @@ impl<const W: usize, F: SupportsQuadraticExtension<W>> std::fmt::Debug for Fp2Ac
     }
 }
 
-impl<const W: usize, F: SupportsQuadraticExtension<W>> RuntimeField<W> for Fp2Field<'_, W, F> {
+impl<const W: usize, F> RuntimeField<W> for Fp2Field<'_, W, F>
+where
+    F: SupportsQuadraticExtension<W>,
+    F::E: Zeroize,
+{
     type Accum = Fp2Accum<W, F>;
 
     fn zero_accum(&self) -> Self::Accum {

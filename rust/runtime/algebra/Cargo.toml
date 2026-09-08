@@ -1,6 +1,6 @@
 [package]
 name = "runtime-algebra"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lints]
@@ -45,4 +45,3 @@ testonly = []
 force-32bit-limbs = []
 limb32 = ["force-32bit-limbs"]
 force-generic-arch = []
-
