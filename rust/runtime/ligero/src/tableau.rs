@@ -20,7 +20,7 @@ pub struct Tableau<T> {
 }
 
 impl<T> Tableau<T> {
-    pub fn new_zeroizing(height: usize, width: usize, default: T) -> Self
+    pub fn new(height: usize, width: usize, default: T) -> Self
     where
         T: Clone + zeroize::Zeroize,
     {
@@ -36,6 +36,13 @@ impl<T> Tableau<T> {
             height,
             wipe: Some(wipe::<T>),
         }
+    }
+
+    pub fn new_zeroizing(height: usize, width: usize, default: T) -> Self
+    where
+        T: Clone + zeroize::Zeroize,
+    {
+        Self::new(height, width, default)
     }
 
     #[must_use]
@@ -138,8 +145,17 @@ mod tests {
     fn drop_zeroizes_every_tableau_element() {
         let zeroized = Arc::new(AtomicUsize::new(0));
         {
-            let _tableau = Tableau::new_zeroizing(3, 4, Tracked(Arc::clone(&zeroized)));
+            let _tableau = Tableau::new(3, 4, Tracked(Arc::clone(&zeroized)));
         }
         assert_eq!(zeroized.load(Ordering::SeqCst), 12);
+    }
+
+    #[test]
+    fn explicit_zeroizing_constructor_matches_ordinary_constructor() {
+        let zeroized = Arc::new(AtomicUsize::new(0));
+        {
+            let _tableau = Tableau::new_zeroizing(2, 3, Tracked(Arc::clone(&zeroized)));
+        }
+        assert_eq!(zeroized.load(Ordering::SeqCst), 6);
     }
 }

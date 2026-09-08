@@ -58,37 +58,24 @@ pub struct ZkProver<const W: usize, F: ZkField<W>> {
     pub config: runtime_ligero::param::LigeroConfig,
 }
 
-pub struct ZkCommitResult<const W: usize, F: ZkField<W>> {
+pub struct ZkCommitResult<const W: usize, F: ZkField<W>>
+where
+    ElementOf<F>: Zeroize,
+{
     pad: SumcheckProof<W, F>,
     lqc: Vec<LigeroQuadraticConstraint>,
     lp: LigeroProver<W, F>,
     pub com: runtime_proto::ligero::LigeroCommitment,
 }
 
-pub struct ZeroizingZkCommitResult<const W: usize, F: ZkField<W>>
-where
-    ElementOf<F>: Zeroize,
-{
-    inner: ZkCommitResult<W, F>,
-}
+pub type ZeroizingZkCommitResult<const W: usize, F> = ZkCommitResult<W, F>;
 
-impl<const W: usize, F: ZkField<W>> std::ops::Deref for ZeroizingZkCommitResult<W, F>
-where
-    ElementOf<F>: Zeroize,
-{
-    type Target = ZkCommitResult<W, F>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<const W: usize, F: ZkField<W>> Drop for ZeroizingZkCommitResult<W, F>
+impl<const W: usize, F: ZkField<W>> Drop for ZkCommitResult<W, F>
 where
     ElementOf<F>: Zeroize,
 {
     fn drop(&mut self) {
-        wipe_sumcheck_pad(&mut self.inner.pad);
+        wipe_sumcheck_pad(&mut self.pad);
     }
 }
 
@@ -150,10 +137,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         ts: &mut Transcript,
         rng: &mut R,
         sf: &SF,
-    ) -> (
-        ZeroizingZkCommitResult<W, F>,
-        runtime_proto::ZkProofGeometry,
-    )
+    ) -> (ZkCommitResult<W, F>, runtime_proto::ZkProofGeometry)
     where
         ElementOf<F>: Zeroize,
     {
@@ -223,13 +207,11 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
             },
         };
         (
-            ZeroizingZkCommitResult {
-                inner: ZkCommitResult {
-                    pad: pad.into_inner(),
-                    lqc,
-                    lp,
-                    com,
-                },
+            ZkCommitResult {
+                pad: pad.into_inner(),
+                lqc,
+                lp,
+                com,
             },
             geom,
         )
@@ -241,7 +223,7 @@ impl<const W: usize, F: ZkField<W>> ZkProver<W, F> {
         &self,
         public_inputs: Vec<ElementOf<F>>,
         witness_only: Vec<ElementOf<F>>,
-        commit_info: &ZeroizingZkCommitResult<W, F>,
+        commit_info: &ZkCommitResult<W, F>,
         tsp: &mut Transcript,
         ctx: &ZkContext<'_, W, F, IF>,
     ) -> Result<ZkProof<W, F>, String>
@@ -426,7 +408,7 @@ mod api_compatibility_tests {
     {
         let (commit, _) = prover.commit(&witness, ctx, transcript, rng, sf);
         let _ = prover.prove(public_inputs, witness, &commit, transcript, ctx);
-        let _commitment = commit.inner.com.clone();
+        let _commitment = commit.com.clone();
     }
 
     #[test]
