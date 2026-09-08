@@ -294,9 +294,12 @@ TEST(ZK, CommitRetryKeepsWitnessAllocationStable) {
   filler.push_back(field.of_scalar(45));
   filler.push_back(field.of_scalar(5));
   filler.push_back(field.of_scalar(6));
-  Dense<TestField> public_inputs(1, circuit->npub_in);
+  // The verifier accepts a full-width input vector whose private suffix is
+  // zero, matching run_test_zk and the production proof boundary.
+  Dense<TestField> public_inputs(1, circuit->ninputs);
   DenseFiller<TestField> public_filler(public_inputs);
   public_filler.push_back(field.one());
+  public_filler.push_back(field.of_scalar(45));
 
   using FftFactory = FFTConvolutionFactory<TestField>;
   const auto omega =
