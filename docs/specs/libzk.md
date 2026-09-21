@@ -203,7 +203,7 @@ These two parameters are chosen to balance the size of the proof against the sou
 # Serializing objects
 This section explains how a proof consists of smaller, related objects, and how to serialize each such component.  First, the standard methods for serializing integers and arrays are used:
 
-*  `write_size(n)`: serializes an integer in [0, 2^{24} - 1] that represents the size of an array or an index into an array. The integer is serialized in little endian order.
+*  `write_size(n)`: serializes an integer in [0, 2^{32} - 1] that represents the size of an array or an index into an array. The integer is serialized as 4 bytes in little endian order.
 *  `write_array(arr)`: A variable-sized array is represented as `type array[]` and serialized by first writing its length as a size element, and then serializing each element of the array in order.
 *  `write_fixed_array(arr)`: When the length of the array is explicitly known to be `n`, it is specified as `type array[n]` and in this case, the array length is not written first.
 
@@ -215,7 +215,7 @@ This section describes a method to serialize field elements, particularly when t
 
 Before a field element can be serialized, the context must specify the finite field. In most cases, the Circuit structure will specify the finite field, and all other aspects of the protocol will be defined by this field.
 
-A finite field or `FieldID` is specified using a variable-length encoding. Common finite fields have been assigned special 1-byte codes. An arbitrary prime-order finite field can be specified using the special `0xF_` byte followed by a variable number of bytes to specify the prime in little-endian order. For example, the 3 byte sequence `f11001` specifies F~257~. Similarly, a quadratic extension using the polynomial x^2 + 1 can be specified using the `0xE_` designators.
+A finite field or `FieldID` is specified using a variable-length encoding. Common finite fields have been assigned special 1-byte codes. An arbitrary prime-order finite field can be specified using the special `0xF_` byte followed by the prime in little-endian order. The low nibble `n` of the `0xF_` byte selects a prime of 2^n^ bytes, as given by the `0xf{0--f}` row of the table below. For example, the 3 byte sequence `f10101` specifies F~257~: the nibble `1` selects a 2-byte prime, and the remaining bytes `01 01` are 257 = 0x0101 in little-endian order. Similarly, a quadratic extension using the polynomial x^2 + 1 can be specified using the `0xE_` designators.
 
 Finite field                  |  FieldID
 ------------------------------|-------------:
